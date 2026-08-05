@@ -1,0 +1,6 @@
+# Stub — whatsapp-bot Kubernetes deployment manifest.
+# Filled in during Phase 8 (Deployment & Training). No-op placeholder.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: whatsapp-bot-placeholder
