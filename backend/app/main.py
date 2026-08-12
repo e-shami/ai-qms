@@ -1,8 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.v1 import auth, institutions
+from app.api.v1 import auth, counters, institutions, queue, tokens
 from app.config import settings
+from app.websocket.routes import ws_router
 
 app = FastAPI(title=settings.APP_NAME, version=settings.APP_VERSION)
 
@@ -18,6 +19,10 @@ API_PREFIX = "/api/v1"
 
 app.include_router(auth.router, prefix=API_PREFIX)
 app.include_router(institutions.router, prefix=API_PREFIX)
+app.include_router(counters.router, prefix=API_PREFIX)
+app.include_router(tokens.router, prefix=API_PREFIX)
+app.include_router(queue.router, prefix=API_PREFIX)
+app.include_router(ws_router)
 
 
 @app.get("/health", tags=["health"])
