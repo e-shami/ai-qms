@@ -1,0 +1,27 @@
+{
+  "winner": "random_forest",
+  "decision": "Random Forest promoted as primary per architecture.md \u00a72: models are statistically indistinguishable on this noisy dataset (test RMSE 43.20 vs 43.30 min, r2 0.13 vs 0.12; 5-fold CV RMSE 41.90 vs 41.71). Linear baseline artifact kept for the Phase 9 improved-vs-traditional comparison. Revisit XGBoost/LightGBM when data grows.",
+  "test": {
+    "random_forest_tuned": {
+      "mae_min": 30.84,
+      "rmse_min": 43.2,
+      "r2": 0.1285
+    },
+    "linear_baseline": {
+      "mae_min": 31.38,
+      "rmse_min": 43.3,
+      "r2": 0.1244
+    }
+  },
+  "cv_rmse_min": {
+    "random_forest_tuned": 41.9,
+    "linear_baseline": 41.71
+  },
+  "rf_config": {
+    "n_estimators": 150,
+    "max_depth": 6,
+    "min_samples_leaf": 20,
+    "random_state": 42
+  },
+  "xgboost_lightgbm": "skipped: 5.8k rows too small to justify (architecture.md \u00a72)"
+}

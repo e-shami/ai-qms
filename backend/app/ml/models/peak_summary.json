@@ -1,0 +1,17 @@
+{
+  "overall_mean_wait_min": 54.49,
+  "min_samples_per_bucket": 5,
+  "peak_hours": [
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17
+  ]
+}
