@@ -15,7 +15,8 @@ export class ApiError extends Error {
 
 let refreshInFlight: Promise<boolean> | null = null;
 
-function refreshOnce(): Promise<boolean> {
+/** Single shared refresh — concurrent 401s must not race token rotation. */
+export function refreshOnce(): Promise<boolean> {
   if (!refreshInFlight) {
     refreshInFlight = useAuthStore
       .getState()

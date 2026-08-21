@@ -1,3 +1,4 @@
+import { refreshOnce } from "@/lib/api-client";
 import { useAuthStore } from "@/store/auth";
 import type { QueueSnapshot } from "@/types";
 
@@ -43,15 +44,12 @@ class QueueSocket {
       this.emitState(false);
       if (this.disposed) return;
       // Access tokens expire after 15 min — silently rotate before retrying
-      // so an idle tab doesn't loop on rejected connections forever.
-      void useAuthStore
-        .getState()
-        .refresh()
-        .finally(() => {
-          if (!this.disposed && useAuthStore.getState().accessToken) {
-            this.retryTimer = setTimeout(() => this.connect(), RECONNECT_MS);
-          }
-        });
+      // (shared single-flight so we never race the api-client's refresh).
+      void refreshOnce().finally(() => {
+        if (!this.disposed && useAuthStore.getState().accessToken) {
+          this.retryTimer = setTimeout(() => this.connect(), RECONNECT_MS);
+        }
+      });
     };
     ws.onerror = () => ws.close();
   }
