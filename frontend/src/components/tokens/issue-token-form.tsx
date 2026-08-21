@@ -153,7 +153,7 @@ export function IssueTokenForm({
               id="issue-phone"
               type="tel"
               aria-invalid={!!errors.customerPhone}
-              placeholder="+251911234567"
+              placeholder="0311 1234567"
               {...register("customerPhone")}
             />
             {errors.customerPhone && (

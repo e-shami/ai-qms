@@ -7,8 +7,14 @@ import { z } from "zod";
 
 // --- primitives -------------------------------------------------------------
 
-/** E.164-ish international phone: optional +, 7–15 digits, no leading zero. */
-export const PHONE_REGEX = /^\+?[1-9]\d{6,14}$/;
+/**
+ * Pakistani mobile numbers only. Accepts local and international forms with
+ * optional space/dash separators:
+ *   03111234567 · 0311 1234567 · 0311-1234567
+ *   +923111234567 · +92 311 1234567 · +92-311-1234567
+ */
+export const PHONE_REGEX = /^(?:\+92[ -]?|0)3\d{2}[ -]?\d{7}$/;
+export const PHONE_HINT = "Pakistani mobile: 0311 1234567 or +92 311 1234567";
 
 export const emailField = z.email("Enter a valid email address");
 
@@ -32,7 +38,7 @@ export const optionalText = (max: number) =>
 export const optionalPhone = z
   .string()
   .trim()
-  .regex(PHONE_REGEX, "International format, e.g. +251911234567")
+  .regex(PHONE_REGEX, PHONE_HINT)
   .optional()
   .or(z.literal(""));
 

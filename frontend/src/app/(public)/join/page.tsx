@@ -39,12 +39,16 @@ function formatWait(minutes: number | null): string {
 
 function whatsappLink(number: string | null, institution: string, counter: string): string | null {
   if (!number) return null;
-  const digits = number.replace(/[^\d]/g, "");
-  if (!digits) return null;
+  // wa.me needs full international digits; convert local 03xx form to +92xx.
+  const digits = number.replace(/\D/g, "");
+  let intl: string | null = null;
+  if (/^92\d{10}$/.test(digits)) intl = digits;
+  else if (/^0\d{10}$/.test(digits)) intl = `92${digits.slice(1)}`;
+  if (!intl) return null;
   const text = encodeURIComponent(
     `Hello ${institution}! I would like a token for ${counter}.`
   );
-  return `https://wa.me/${digits}?text=${text}`;
+  return `https://wa.me/${intl}?text=${text}`;
 }
 
 export default function JoinPage() {
@@ -302,7 +306,7 @@ export default function JoinPage() {
                 <Input
                   id="join-phone"
                   type="tel"
-                  placeholder="+251911234567"
+                  placeholder="0311 1234567"
                   aria-invalid={!!errors.customerPhone}
                   {...register("customerPhone")}
                 />

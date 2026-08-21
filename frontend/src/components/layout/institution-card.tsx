@@ -156,7 +156,7 @@ export function InstitutionCard() {
                   <Input
                     id="inst-whatsapp"
                     type="tel"
-                    placeholder="+251911234567"
+                    placeholder="+92 311 1234567"
                     aria-invalid={!!errors.whatsappNumber}
                     {...register("whatsappNumber")}
                   />
@@ -164,7 +164,7 @@ export function InstitutionCard() {
                     <p className="text-xs text-destructive">{errors.whatsappNumber.message}</p>
                   ) : (
                     <p className="text-xs text-muted-foreground">
-                      International format with country code.
+                      Pakistani mobile: 0311 1234567 or +92 311 1234567.
                     </p>
                   )}
                 </div>
