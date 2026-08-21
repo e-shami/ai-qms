@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     PUBLIC_ISSUE_RATE_WINDOW_SECONDS: int = 60
     PUBLIC_LOOKUP_RATE_LIMIT: int = 60
     PUBLIC_LOOKUP_RATE_WINDOW_SECONDS: int = 60
+    PREDICT_DEFAULT_SERVICE_MIN: float = 5.0
+    PREDICT_MIN_SERVICE_SAMPLES: int = 5
 
 
 settings = Settings()

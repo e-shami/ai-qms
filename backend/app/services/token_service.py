@@ -71,7 +71,12 @@ def build_public_ticket(db: Session, token: Token) -> PublicTicketOut:
     position = token_position(db, token) if token.status in NON_TERMINAL_STATUSES else None
     people_ahead = position - 1 if position is not None else None
     estimated_wait = (
-        estimate_wait_minutes(db, institution_id=token.institution_id, counter=counter)
+        estimate_wait_minutes(
+            db,
+            institution_id=token.institution_id,
+            counter=counter,
+            people_ahead=people_ahead,
+        )[0]
         if token.status in NON_TERMINAL_STATUSES
         else None
     )
