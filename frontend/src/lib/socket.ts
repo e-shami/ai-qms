@@ -13,6 +13,12 @@ class QueueSocket {
   private stateListeners = new Set<StateListener>();
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private disposed = false;
+  private connectedState = false;
+
+  /** Current link status — lets late subscribers read state, not just changes. */
+  isConnected(): boolean {
+    return this.connectedState;
+  }
 
   connect(): void {
     this.disposed = false;
@@ -73,6 +79,7 @@ class QueueSocket {
   }
 
   private emitState(connected: boolean): void {
+    this.connectedState = connected;
     this.stateListeners.forEach((listener) => listener(connected));
   }
 }

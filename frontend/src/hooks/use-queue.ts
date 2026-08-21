@@ -12,7 +12,9 @@ export function useQueue() {
   const [snapshot, setSnapshot] = useState<QueueSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [connected, setConnected] = useState(false);
+  // Read the socket's current state at mount — a component mounting after the
+  // socket already opened would otherwise wait forever for a change event.
+  const [connected, setConnected] = useState<boolean>(() => queueSocket.isConnected());
   const accessToken = useAuthStore((state) => state.accessToken);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const mountedRef = useRef(true);
