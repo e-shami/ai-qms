@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
@@ -32,7 +33,14 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> TokenRe
 
     institution = Institution(name=payload.institution_name, type=payload.institution_type)
     db.add(institution)
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Institution name already registered",
+        )
 
     user = User(
         email=payload.email,
@@ -42,7 +50,14 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> TokenRe
         institution_id=institution.id,
     )
     db.add(user)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Email already registered",
+        )
     db.refresh(user)
 
     access = create_access_token(user.id, user.role, user.institution_id)

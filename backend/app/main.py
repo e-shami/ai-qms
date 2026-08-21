@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.v1 import auth, counters, institutions, queue, tokens
+from app.api.v1 import auth, counters, institutions, personnel, queue, tokens
 from app.config import settings
 from app.websocket.routes import ws_router
 
@@ -20,6 +20,7 @@ API_PREFIX = "/api/v1"
 app.include_router(auth.router, prefix=API_PREFIX)
 app.include_router(institutions.router, prefix=API_PREFIX)
 app.include_router(counters.router, prefix=API_PREFIX)
+app.include_router(personnel.router, prefix=API_PREFIX)
 app.include_router(tokens.router, prefix=API_PREFIX)
 app.include_router(queue.router, prefix=API_PREFIX)
 app.include_router(ws_router)
