@@ -2,13 +2,15 @@
 
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
-import { Printer, RefreshCw } from "lucide-react";
+import { Copy, Printer, RefreshCw } from "lucide-react";
+import toast from "react-hot-toast";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TokenStatusBadge, formatDateTime } from "@/components/ui/status";
 import { useTicket } from "@/hooks/use-public";
+import { parseTicketLookup } from "@/lib/validators";
 import type { TokenStatus } from "@/types";
 
 function formatWait(minutes: number | null): string {
@@ -20,17 +22,25 @@ function formatWait(minutes: number | null): string {
 export default function TicketPage() {
   const params = useParams<{ number: string }>();
   const searchParams = useSearchParams();
-  const institutionId = Number(searchParams.get("institution")) || null;
-  const tokenNumber = params?.number ?? null;
+  const lookup = parseTicketLookup(params?.number, searchParams.get("institution"));
+  const institutionId = lookup?.institutionId ?? null;
+  const tokenNumber = lookup?.tokenNumber ?? null;
   const { ticket, loading, error, reload } = useTicket(institutionId, tokenNumber);
+
+  function copyLink() {
+    void navigator.clipboard
+      .writeText(window.location.href)
+      .then(() => toast.success("Link copied"))
+      .catch(() => toast.error("Could not copy the link"));
+  }
 
   if (!institutionId || !tokenNumber) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Ticket not found</CardTitle>
+          <CardTitle>Ticket link is invalid</CardTitle>
           <CardDescription>
-            This link is missing the institution context. Open your token from the
+            This link is missing or malformed context. Open your token from the
             institution page or issue a new one.
           </CardDescription>
         </CardHeader>
@@ -82,6 +92,10 @@ export default function TicketPage() {
           ← Get another token
         </Link>
         <div className="flex gap-2">
+          <Button size="sm" variant="outline" onClick={copyLink}>
+            <Copy />
+            Copy link
+          </Button>
           <Button size="sm" variant="outline" onClick={reload}>
             <RefreshCw />
             Refresh

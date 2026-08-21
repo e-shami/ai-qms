@@ -1,7 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus } from "lucide-react";
+import toast from "react-hot-toast";
 
 import {
   Dialog,
@@ -31,6 +34,7 @@ import { useCounters } from "@/hooks/use-resources";
 import { useQueue } from "@/hooks/use-queue";
 import { api } from "@/lib/api-client";
 import { useAuthStore } from "@/store/auth";
+import { counterFormSchema, type CounterFormValues } from "@/lib/validators";
 import type { Counter } from "@/types";
 
 function CounterFormDialog({
@@ -40,39 +44,55 @@ function CounterFormDialog({
 }: {
   counter?: Counter;
   onSaved: () => void;
-  onError: (message: string) => void;
+  onError: (message: string | null) => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const [name, setName] = useState(counter?.name ?? "");
-  const [type, setType] = useState(counter?.type ?? "");
-  const [busy, setBusy] = useState(false);
+  const {
+    register,
+    handleSubmit,
+    reset,
+    setFocus,
+    formState: { errors, isSubmitting },
+  } = useForm<CounterFormValues>({
+    resolver: zodResolver(counterFormSchema),
+    defaultValues: { name: counter?.name ?? "", type: counter?.type ?? "" },
+  });
 
-  async function onSubmit(event: React.FormEvent) {
-    event.preventDefault();
-    setBusy(true);
+  // Re-seed when opening for a different counter (edit mode).
+  useEffect(() => {
+    reset({ name: counter?.name ?? "", type: counter?.type ?? "" });
+  }, [counter, reset]);
+
+  async function onSubmit(values: CounterFormValues) {
+    onError(null);
     try {
       if (counter) {
         await api.patch(`/counters/${counter.id}`, {
-          name: name.trim() || undefined,
-          type: type.trim() || undefined,
+          name: values.name,
+          type: values.type || undefined,
         });
+        toast.success(`Counter "${values.name}" updated`);
       } else {
         await api.post("/counters", {
-          name: name.trim(),
-          type: type.trim() || null,
+          name: values.name,
+          type: values.type || null,
         });
+        toast.success(`Counter "${values.name}" created`);
       }
-      setOpen(false);
       onSaved();
     } catch (err) {
-      onError(err instanceof Error ? err.message : "Save failed");
-    } finally {
-      setBusy(false);
+      const message = err instanceof Error ? err.message : "Save failed";
+      onError(message);
+      toast.error(message);
     }
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      onOpenChange={(open) => {
+        if (!open) reset({ name: counter?.name ?? "", type: counter?.type ?? "" });
+        else setTimeout(() => setFocus("name"), 50);
+      }}
+    >
       <DialogTrigger
         render={
           counter ? <Button size="xs" variant="outline" /> : <Button size="sm" />
@@ -92,29 +112,30 @@ function CounterFormDialog({
             A counter is a service point within your institution.
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={onSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="counter-name">Name</Label>
             <Input
               id="counter-name"
-              required
-              value={name}
-              onChange={(e) => setName(e.target.value)}
               placeholder="e.g. Teller 1, Pharmacy, Admissions"
+              aria-invalid={!!errors.name}
+              {...register("name")}
             />
+            {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
           </div>
           <div className="space-y-2">
             <Label htmlFor="counter-type">Type (optional)</Label>
             <Input
               id="counter-type"
-              value={type}
-              onChange={(e) => setType(e.target.value)}
               placeholder="e.g. cashier, pharmacy, registration"
+              aria-invalid={!!errors.type}
+              {...register("type")}
             />
+            {errors.type && <p className="text-xs text-destructive">{errors.type.message}</p>}
           </div>
           <DialogFooter showCloseButton>
-            <Button type="submit" disabled={busy}>
-              {busy ? "Saving…" : "Save"}
+            <Button type="submit" disabled={isSubmitting}>
+              {isSubmitting ? "Saving…" : "Save"}
             </Button>
           </DialogFooter>
         </form>
@@ -135,9 +156,12 @@ export default function CountersPage() {
     try {
       await api.delete(`/counters/${counter.id}`);
       setActionError(null);
+      toast.success(`Counter "${counter.name}" deactivated`);
       reload();
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Deactivation failed");
+      const message = err instanceof Error ? err.message : "Deactivation failed";
+      setActionError(message);
+      toast.error(message);
     }
   }
 
@@ -145,9 +169,12 @@ export default function CountersPage() {
     try {
       await api.post(`/counters/${counter.id}/activate`);
       setActionError(null);
+      toast.success(`Counter "${counter.name}" activated`);
       reload();
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Reactivation failed");
+      const message = err instanceof Error ? err.message : "Reactivation failed";
+      setActionError(message);
+      toast.error(message);
     }
   }
 

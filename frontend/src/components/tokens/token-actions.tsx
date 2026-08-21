@@ -1,12 +1,20 @@
 "use client";
 
 import { useState } from "react";
+import toast from "react-hot-toast";
 
 import { api } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import type { Token } from "@/types";
 
 type Action = "call" | "start" | "complete" | "no-show";
+
+const ACTION_LABELS: Record<Action, string> = {
+  call: "called",
+  start: "started",
+  complete: "completed",
+  "no-show": "marked as no-show",
+};
 
 export function TokenActions({
   token,
@@ -15,17 +23,21 @@ export function TokenActions({
 }: {
   token: Token;
   onDone?: () => void;
-  onError?: (message: string) => void;
+  onError?: (message: string | null) => void;
 }) {
   const [busy, setBusy] = useState<Action | null>(null);
 
   async function run(action: Action) {
     setBusy(action);
+    onError?.(null);
     try {
       await api.post(`/tokens/${token.id}/${action}`);
+      toast.success(`${token.token_number} ${ACTION_LABELS[action]}`);
       onDone?.();
     } catch (err) {
-      onError?.(err instanceof Error ? err.message : "Action failed");
+      const message = err instanceof Error ? err.message : "Action failed";
+      onError?.(message);
+      toast.error(message);
     } finally {
       setBusy(null);
     }

@@ -2,7 +2,10 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowLeft, ArrowRight, MessageCircle, Printer, Search, Ticket } from "lucide-react";
+import toast from "react-hot-toast";
 
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -22,6 +25,10 @@ import {
   usePublicCounters,
   usePublicInstitutions,
 } from "@/hooks/use-public";
+import {
+  joinDetailsSchema,
+  type JoinDetailsFormValues,
+} from "@/lib/validators";
 import type { PublicInstitution, PublicTicket } from "@/types";
 
 function formatWait(minutes: number | null): string {
@@ -49,42 +56,48 @@ export default function JoinPage() {
     selectedInstitution?.id ?? null
   );
   const [counterId, setCounterId] = useState<number | null>(null);
-  const [customerName, setCustomerName] = useState("");
-  const [customerPhone, setCustomerPhone] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [issueError, setIssueError] = useState<string | null>(null);
   const [issued, setIssued] = useState<PublicTicket | null>(null);
+
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors, isSubmitting },
+  } = useForm<JoinDetailsFormValues>({
+    resolver: zodResolver(joinDetailsSchema),
+    defaultValues: { customerName: "", customerPhone: "" },
+  });
 
   const filtered = (institutions ?? []).filter((institution) =>
     institution.name.toLowerCase().includes(search.trim().toLowerCase())
   );
   const selectedCounter = counters?.find((counter) => counter.id === counterId) ?? null;
 
-  async function submit() {
-    if (!selectedInstitution || !counterId) return;
-    setBusy(true);
-    setIssueError(null);
+  async function onSubmit(values: JoinDetailsFormValues) {
+    if (!selectedInstitution || !counterId) {
+      toast.error("Select a service first");
+      return;
+    }
     try {
       const ticket = await issuePublicToken({
         institution_id: selectedInstitution.id,
         counter_id: counterId,
-        customer_name: customerName.trim() || null,
-        customer_phone: customerPhone.trim() || null,
+        customer_name: values.customerName || null,
+        customer_phone: values.customerPhone || null,
       });
+      toast.success(`Token ${ticket.token_number} issued`);
       setIssued(ticket);
     } catch (err) {
-      setIssueError(err instanceof Error ? err.message : "Could not issue a token");
-    } finally {
-      setBusy(false);
+      const message = err instanceof Error ? err.message : "Could not issue a token";
+      toast.error(message);
     }
   }
 
-  function reset() {
+  function startOver() {
     setIssued(null);
     setCounterId(null);
-    setCustomerName("");
-    setCustomerPhone("");
-    setIssueError(null);
+    setSelectedInstitution(null);
+    reset({ customerName: "", customerPhone: "" });
   }
 
   if (issued && selectedInstitution) {
@@ -134,7 +147,7 @@ export default function JoinPage() {
                 <Printer />
                 View / print ticket
               </Button>
-              <Button variant="ghost" className="flex-1" onClick={reset}>
+              <Button variant="ghost" className="flex-1" onClick={startOver}>
                 New token
               </Button>
             </div>
@@ -270,41 +283,46 @@ export default function JoinPage() {
               A name helps staff address you; a phone enables WhatsApp updates where supported.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="join-name">Name</Label>
-              <Input
-                id="join-name"
-                value={customerName}
-                onChange={(e) => setCustomerName(e.target.value)}
-                placeholder="e.g. Sarah Ahmed"
-                maxLength={255}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="join-phone">Phone (WhatsApp)</Label>
-              <Input
-                id="join-phone"
-                type="tel"
-                value={customerPhone}
-                onChange={(e) => setCustomerPhone(e.target.value)}
-                placeholder="+251911234567"
-                maxLength={32}
-              />
-            </div>
-            {issueError && <Alert variant="destructive">{issueError}</Alert>}
-            {waEarlyLink && (
-              <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <MessageCircle className="size-3.5" />
-                Prefer chat?{" "}
-                <a href={waEarlyLink} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">
-                  Continue on WhatsApp
-                </a>
-              </p>
-            )}
-            <Button className="w-full" onClick={submit} disabled={busy}>
-              {busy ? "Issuing…" : `Get token for ${selectedCounter?.name ?? ""}`}
-            </Button>
+          <CardContent>
+            <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="join-name">Name</Label>
+                <Input
+                  id="join-name"
+                  placeholder="e.g. Sarah Ahmed"
+                  aria-invalid={!!errors.customerName}
+                  {...register("customerName")}
+                />
+                {errors.customerName && (
+                  <p className="text-xs text-destructive">{errors.customerName.message}</p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="join-phone">Phone (WhatsApp)</Label>
+                <Input
+                  id="join-phone"
+                  type="tel"
+                  placeholder="+251911234567"
+                  aria-invalid={!!errors.customerPhone}
+                  {...register("customerPhone")}
+                />
+                {errors.customerPhone && (
+                  <p className="text-xs text-destructive">{errors.customerPhone.message}</p>
+                )}
+              </div>
+              {waEarlyLink && (
+                <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <MessageCircle className="size-3.5" />
+                  Prefer chat?{" "}
+                  <a href={waEarlyLink} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">
+                    Continue on WhatsApp
+                  </a>
+                </p>
+              )}
+              <Button type="submit" className="w-full" disabled={isSubmitting}>
+                {isSubmitting ? "Issuing…" : `Get token for ${selectedCounter?.name ?? ""}`}
+              </Button>
+            </form>
           </CardContent>
         </Card>
       )}

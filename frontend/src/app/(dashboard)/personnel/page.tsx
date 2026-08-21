@@ -1,7 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus } from "lucide-react";
+import toast from "react-hot-toast";
 
 import {
   Dialog,
@@ -31,9 +34,14 @@ import { Panel } from "@/components/ui/status";
 import { useCounters, usePersonnel } from "@/hooks/use-resources";
 import { api } from "@/lib/api-client";
 import { useAuthStore } from "@/store/auth";
+import {
+  NO_COUNTER_VALUE,
+  personnelFormSchema,
+  staffAccountSchema,
+  type PersonnelFormValues,
+  type StaffAccountFormValues,
+} from "@/lib/validators";
 import type { Personnel } from "@/types";
-
-const NO_COUNTER = "__none__";
 
 function StaffAccountDialog({
   member,
@@ -42,29 +50,31 @@ function StaffAccountDialog({
 }: {
   member: Personnel;
   onSaved: () => void;
-  onError: (message: string) => void;
+  onError: (message: string | null) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [busy, setBusy] = useState(false);
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors, isSubmitting },
+  } = useForm<StaffAccountFormValues>({
+    resolver: zodResolver(staffAccountSchema),
+    defaultValues: { email: "", password: "" },
+  });
 
-  async function onSubmit(event: React.FormEvent) {
-    event.preventDefault();
-    setBusy(true);
+  async function onSubmit(values: StaffAccountFormValues) {
+    onError(null);
     try {
-      await api.post(`/personnel/${member.id}/account`, {
-        email,
-        password,
-      });
+      await api.post(`/personnel/${member.id}/account`, values);
+      toast.success(`Login created for ${member.name}`);
+      reset({ email: "", password: "" });
       setOpen(false);
-      setEmail("");
-      setPassword("");
       onSaved();
     } catch (err) {
-      onError(err instanceof Error ? err.message : "Account creation failed");
-    } finally {
-      setBusy(false);
+      const message = err instanceof Error ? err.message : "Account creation failed";
+      onError(message);
+      toast.error(message);
     }
   }
 
@@ -81,33 +91,34 @@ function StaffAccountDialog({
             Share the password securely.
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={onSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="staff-email">Email</Label>
             <Input
               id="staff-email"
               type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
               placeholder="staff@institution.com"
+              aria-invalid={!!errors.email}
+              {...register("email")}
             />
+            {errors.email && <p className="text-xs text-destructive">{errors.email.message}</p>}
           </div>
           <div className="space-y-2">
             <Label htmlFor="staff-password">Password</Label>
             <Input
               id="staff-password"
               type="password"
-              required
-              minLength={8}
               autoComplete="new-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              aria-invalid={!!errors.password}
+              {...register("password")}
             />
+            {errors.password && (
+              <p className="text-xs text-destructive">{errors.password.message}</p>
+            )}
           </div>
           <DialogFooter showCloseButton>
-            <Button type="submit" disabled={busy}>
-              {busy ? "Creating…" : "Create account"}
+            <Button type="submit" disabled={isSubmitting}>
+              {isSubmitting ? "Creating…" : "Create account"}
             </Button>
           </DialogFooter>
         </form>
@@ -125,36 +136,60 @@ function PersonnelFormDialog({
   member?: Personnel;
   counters: Array<{ id: number; name: string }>;
   onSaved: () => void;
-  onError: (message: string) => void;
+  onError: (message: string | null) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [name, setName] = useState(member?.name ?? "");
-  const [title, setTitle] = useState(member?.title ?? "");
-  const [counterId, setCounterId] = useState(
-    member?.counter_id != null ? String(member.counter_id) : NO_COUNTER
-  );
-  const [busy, setBusy] = useState(false);
+  const {
+    register,
+    handleSubmit,
+    reset,
+    setValue,
+    watch,
+    formState: { errors, isSubmitting },
+  } = useForm<PersonnelFormValues>({
+    resolver: zodResolver(personnelFormSchema),
+    defaultValues: {
+      name: member?.name ?? "",
+      title: member?.title ?? "",
+      counterId:
+        member?.counter_id != null ? String(member.counter_id) : NO_COUNTER_VALUE,
+    },
+  });
 
-  async function onSubmit(event: React.FormEvent) {
-    event.preventDefault();
-    setBusy(true);
+  const counterId = watch("counterId");
+
+  useEffect(() => {
+    if (open) {
+      reset({
+        name: member?.name ?? "",
+        title: member?.title ?? "",
+        counterId:
+          member?.counter_id != null ? String(member.counter_id) : NO_COUNTER_VALUE,
+      });
+    }
+  }, [member, open, reset]);
+
+  async function onSubmit(values: PersonnelFormValues) {
+    onError(null);
+    const payload = {
+      name: values.name,
+      title: values.title || null,
+      counter_id: values.counterId === NO_COUNTER_VALUE ? null : Number(values.counterId),
+    };
     try {
-      const payload = {
-        name: name.trim(),
-        title: title.trim() || null,
-        counter_id: counterId === NO_COUNTER ? null : Number(counterId),
-      };
       if (member) {
         await api.patch(`/personnel/${member.id}`, payload);
+        toast.success(`Staff member "${values.name}" updated`);
       } else {
         await api.post("/personnel", payload);
+        toast.success(`Staff member "${values.name}" added`);
       }
       setOpen(false);
       onSaved();
     } catch (err) {
-      onError(err instanceof Error ? err.message : "Save failed");
-    } finally {
-      setBusy(false);
+      const message = err instanceof Error ? err.message : "Save failed";
+      onError(message);
+      toast.error(message);
     }
   }
 
@@ -179,36 +214,35 @@ function PersonnelFormDialog({
             Staff work the queue; assigning a counter links them to it.
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={onSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="personnel-name">Name</Label>
-            <Input
-              id="personnel-name"
-              required
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
+            <Input id="personnel-name" aria-invalid={!!errors.name} {...register("name")} />
+            {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
           </div>
           <div className="space-y-2">
             <Label htmlFor="personnel-title">Title (optional)</Label>
             <Input
               id="personnel-title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
               placeholder="e.g. nurse, teller, registrar"
+              aria-invalid={!!errors.title}
+              {...register("title")}
             />
+            {errors.title && <p className="text-xs text-destructive">{errors.title.message}</p>}
           </div>
           <div className="space-y-2">
             <Label htmlFor="personnel-counter">Counter (optional)</Label>
             <Select
               value={counterId}
-              onValueChange={(value) => setCounterId(value ?? NO_COUNTER)}
+              onValueChange={(value) =>
+                setValue("counterId", value ?? NO_COUNTER_VALUE, { shouldValidate: true })
+              }
             >
-              <SelectTrigger className="w-full">
+              <SelectTrigger className="w-full" aria-invalid={!!errors.counterId}>
                 <SelectValue placeholder="No counter assigned" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={NO_COUNTER} label="No counter assigned">
+                <SelectItem value={NO_COUNTER_VALUE} label="No counter assigned">
                   No counter assigned
                 </SelectItem>
                 {counters.map((counter) => (
@@ -222,10 +256,13 @@ function PersonnelFormDialog({
                 ))}
               </SelectContent>
             </Select>
+            {errors.counterId && (
+              <p className="text-xs text-destructive">{errors.counterId.message}</p>
+            )}
           </div>
           <DialogFooter showCloseButton>
-            <Button type="submit" disabled={busy}>
-              {busy ? "Saving…" : "Save"}
+            <Button type="submit" disabled={isSubmitting}>
+              {isSubmitting ? "Saving…" : "Save"}
             </Button>
           </DialogFooter>
         </form>
@@ -246,9 +283,12 @@ export default function PersonnelPage() {
     try {
       await api.delete(`/personnel/${member.id}`);
       setActionError(null);
+      toast.success(`"${member.name}" deactivated`);
       reload();
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Deactivation failed");
+      const message = err instanceof Error ? err.message : "Deactivation failed";
+      setActionError(message);
+      toast.error(message);
     }
   }
 
@@ -256,9 +296,12 @@ export default function PersonnelPage() {
     try {
       await api.post(`/personnel/${member.id}/activate`);
       setActionError(null);
+      toast.success(`"${member.name}" activated`);
       reload();
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Reactivation failed");
+      const message = err instanceof Error ? err.message : "Reactivation failed";
+      setActionError(message);
+      toast.error(message);
     }
   }
 

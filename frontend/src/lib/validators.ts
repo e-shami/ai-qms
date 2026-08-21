@@ -1,0 +1,173 @@
+/**
+ * Centralized zod schemas — every user input in the app validates here.
+ * Limits mirror the backend's Pydantic constraints so clients never send
+ * something the server must reject.
+ */
+import { z } from "zod";
+
+// --- primitives -------------------------------------------------------------
+
+/** E.164-ish international phone: optional +, 7–15 digits, no leading zero. */
+export const PHONE_REGEX = /^\+?[1-9]\d{6,14}$/;
+
+export const emailField = z.email("Enter a valid email address");
+
+export const passwordField = z
+  .string()
+  .min(8, "At least 8 characters")
+  .max(128, "At most 128 characters");
+
+export const requiredName = (max: number) =>
+  z.string().trim().min(1, "This field is required").max(max, `At most ${max} characters`);
+
+export const optionalText = (max: number) =>
+  z
+    .string()
+    .trim()
+    .max(max, `At most ${max} characters`)
+    .optional()
+    .or(z.literal(""));
+
+/** Optional phone stored normalized or empty when untouched. */
+export const optionalPhone = z
+  .string()
+  .trim()
+  .regex(PHONE_REGEX, "International format, e.g. +251911234567")
+  .optional()
+  .or(z.literal(""));
+
+/** yyyy-mm-dd date-input value or empty. */
+const dateString = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Use the date picker")
+  .optional()
+  .or(z.literal(""));
+
+// --- auth --------------------------------------------------------------------
+
+export const loginSchema = z.object({
+  email: emailField,
+  password: z.string().min(1, "Password is required"),
+});
+export type LoginFormValues = z.infer<typeof loginSchema>;
+
+export const registerSchema = z.object({
+  fullName: requiredName(255),
+  institutionName: requiredName(255),
+  institutionType: optionalText(64),
+  email: emailField,
+  password: passwordField,
+});
+export type RegisterFormValues = z.infer<typeof registerSchema>;
+
+// --- profile ------------------------------------------------------------------
+
+export const profileSchema = z.object({
+  fullName: requiredName(255),
+  email: emailField,
+});
+export type ProfileFormValues = z.infer<typeof profileSchema>;
+
+export const changePasswordSchema = z
+  .object({
+    currentPassword: z.string().min(1, "Current password is required"),
+    newPassword: passwordField,
+    confirmPassword: z.string().min(1, "Confirm the new password"),
+  })
+  .refine((data) => data.newPassword === data.confirmPassword, {
+    path: ["confirmPassword"],
+    message: "Passwords do not match",
+  });
+export type ChangePasswordFormValues = z.infer<typeof changePasswordSchema>;
+
+// --- staff-account ------------------------------------------------------------
+
+export const staffAccountSchema = z.object({
+  email: emailField,
+  password: passwordField,
+});
+export type StaffAccountFormValues = z.infer<typeof staffAccountSchema>;
+
+// --- institution ----------------------------------------------------------------
+
+export const institutionSchema = z.object({
+  name: requiredName(255),
+  type: optionalText(64),
+  whatsappNumber: optionalPhone,
+});
+export type InstitutionFormValues = z.infer<typeof institutionSchema>;
+
+// --- counters ---------------------------------------------------------------------
+
+export const counterFormSchema = z.object({
+  name: requiredName(128),
+  type: optionalText(64),
+});
+export type CounterFormValues = z.infer<typeof counterFormSchema>;
+
+// --- personnel -----------------------------------------------------------------------
+
+const NO_COUNTER = "__none__";
+
+export const personnelFormSchema = z.object({
+  name: requiredName(255),
+  title: optionalText(128),
+  counterId: z.union([z.literal(NO_COUNTER), z.string().regex(/^\d+$/, "Pick a counter")]),
+});
+export type PersonnelFormValues = z.infer<typeof personnelFormSchema>;
+export const NO_COUNTER_VALUE = NO_COUNTER;
+
+// --- tokens ------------------------------------------------------------------------------
+
+export const issueTokenSchema = z.object({
+  counterId: z.string().regex(/^\d+$/, "Select a counter"),
+  customerName: optionalText(255),
+  customerPhone: optionalPhone,
+});
+export type IssueTokenFormValues = z.infer<typeof issueTokenSchema>;
+
+// --- public join flow ------------------------------------------------------------------------
+
+export const joinDetailsSchema = z.object({
+  customerName: optionalText(255),
+  customerPhone: optionalPhone,
+});
+export type JoinDetailsFormValues = z.infer<typeof joinDetailsSchema>;
+
+/** Public ticket lookup params (token page). */
+export const ticketLookupSchema = z.object({
+  tokenNumber: z
+    .string()
+    .trim()
+    .regex(/^[A-Za-z0-9]{1,10}-\d{1,8}$/, "Malformed token number"),
+  institutionId: z.coerce.number().int().positive(),
+});
+export type TicketLookupValues = z.infer<typeof ticketLookupSchema>;
+
+// --- date ranges -------------------------------------------------------------------------------
+
+export const dateRangeSchema = z
+  .object({
+    from: dateString,
+    to: dateString,
+  })
+  .refine(
+    (data) => {
+      if (!data.from || !data.to) return true;
+      return new Date(`${data.from}T00:00:00`) <= new Date(`${data.to}T00:00:00`);
+    },
+    { path: ["to"], message: "'To' must be on or after 'From'" }
+  );
+export type DateRangeValues = z.infer<typeof dateRangeSchema>;
+
+/** Parse-and-validate dynamic route/query input; null when invalid. */
+export function parseTicketLookup(
+  raw: string | undefined,
+  institutionRaw: string | null
+): TicketLookupValues | null {
+  const parsed = ticketLookupSchema.safeParse({
+    tokenNumber: raw ?? "",
+    institutionId: institutionRaw ?? "",
+  });
+  return parsed.success ? parsed.data : null;
+}

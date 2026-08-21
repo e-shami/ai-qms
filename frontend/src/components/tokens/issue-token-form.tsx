@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { Clock3, TicketPlus } from "lucide-react";
+import toast from "react-hot-toast";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { api } from "@/lib/api-client";
+import { issueTokenSchema, type IssueTokenFormValues } from "@/lib/validators";
 import type { Counter, Token, WaitPrediction } from "@/types";
 
 function formatWait(minutes: number): string {
@@ -23,21 +27,31 @@ export function IssueTokenForm({
 }: {
   counters: Counter[];
   onIssued?: (token: Token) => void;
-  onError?: (message: string) => void;
+  onError?: (message: string | null) => void;
 }) {
-  const [counterId, setCounterId] = useState<string>("");
-  const [customerName, setCustomerName] = useState("");
-  const [customerPhone, setCustomerPhone] = useState("");
-  const [busy, setBusy] = useState(false);
   const [predData, setPredData] = useState<{ counterId: string; pred: WaitPrediction } | null>(
     null
   );
-  // Only show a prediction that belongs to the currently selected counter.
+
+  const {
+    register,
+    handleSubmit,
+    setValue,
+    watch,
+    reset,
+    formState: { errors, isSubmitting },
+  } = useForm<IssueTokenFormValues>({
+    resolver: zodResolver(issueTokenSchema),
+    defaultValues: { counterId: "", customerName: "", customerPhone: "" },
+  });
+
+  const counterId = watch("counterId");
   const prediction = predData?.counterId === counterId ? predData.pred : null;
+  const activeCounters = counters.filter((counter) => counter.is_active);
 
   // ML wait estimate for the selected counter — soft-fails silently.
   useEffect(() => {
-    if (!counterId) return;
+    if (!counterId || !/^\d+$/.test(counterId)) return;
     let cancelled = false;
     api
       .get<WaitPrediction>(`/predictions/wait?counter_id=${counterId}`)
@@ -52,30 +66,23 @@ export function IssueTokenForm({
     };
   }, [counterId]);
 
-  async function onSubmit(event: React.FormEvent) {
-    event.preventDefault();
-    if (!counterId) {
-      onError?.("Select a counter first");
-      return;
-    }
-    setBusy(true);
+  async function onSubmit(values: IssueTokenFormValues) {
+    onError?.(null);
     try {
       const token = await api.post<Token>("/tokens", {
-        counter_id: Number(counterId),
-        customer_name: customerName.trim() || null,
-        customer_phone: customerPhone.trim() || null,
+        counter_id: Number(values.counterId),
+        customer_name: values.customerName || null,
+        customer_phone: values.customerPhone || null,
       });
-      setCustomerName("");
-      setCustomerPhone("");
+      toast.success(`Token ${token.token_number} issued`);
+      reset({ counterId: values.counterId, customerName: "", customerPhone: "" });
       onIssued?.(token);
     } catch (err) {
-      onError?.(err instanceof Error ? err.message : "Failed to issue token");
-    } finally {
-      setBusy(false);
+      const message = err instanceof Error ? err.message : "Failed to issue token";
+      onError?.(message);
+      toast.error(message);
     }
   }
-
-  const activeCounters = counters.filter((counter) => counter.is_active);
 
   return (
     <Card>
@@ -89,14 +96,16 @@ export function IssueTokenForm({
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <form onSubmit={onSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="issue-counter">Counter</Label>
             <Select
               value={counterId}
-              onValueChange={(value) => setCounterId(value ?? "")}
+              onValueChange={(value) =>
+                setValue("counterId", value ?? "", { shouldValidate: true })
+              }
             >
-              <SelectTrigger className="w-full">
+              <SelectTrigger className="w-full" aria-invalid={!!errors.counterId}>
                 <SelectValue placeholder="Select a counter" />
               </SelectTrigger>
               <SelectContent>
@@ -112,6 +121,9 @@ export function IssueTokenForm({
                 ))}
               </SelectContent>
             </Select>
+            {errors.counterId && (
+              <p className="text-xs text-destructive">{errors.counterId.message}</p>
+            )}
             {counterId && prediction && (
               <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <Clock3 className="size-3.5" />
@@ -127,25 +139,29 @@ export function IssueTokenForm({
             <Label htmlFor="issue-customer">Customer name (optional)</Label>
             <Input
               id="issue-customer"
-              value={customerName}
-              onChange={(e) => setCustomerName(e.target.value)}
-              maxLength={255}
+              aria-invalid={!!errors.customerName}
               placeholder="Walk-in customer"
+              {...register("customerName")}
             />
+            {errors.customerName && (
+              <p className="text-xs text-destructive">{errors.customerName.message}</p>
+            )}
           </div>
           <div className="space-y-2">
             <Label htmlFor="issue-phone">Customer phone (optional)</Label>
             <Input
               id="issue-phone"
               type="tel"
-              value={customerPhone}
-              onChange={(e) => setCustomerPhone(e.target.value)}
-              maxLength={32}
+              aria-invalid={!!errors.customerPhone}
               placeholder="+251911234567"
+              {...register("customerPhone")}
             />
+            {errors.customerPhone && (
+              <p className="text-xs text-destructive">{errors.customerPhone.message}</p>
+            )}
           </div>
-          <Button type="submit" className="w-full" disabled={busy || activeCounters.length === 0}>
-            {busy ? "Issuing…" : "Issue token"}
+          <Button type="submit" className="w-full" disabled={isSubmitting || activeCounters.length === 0}>
+            {isSubmitting ? "Issuing…" : "Issue token"}
           </Button>
         </form>
       </CardContent>

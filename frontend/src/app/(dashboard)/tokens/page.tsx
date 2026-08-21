@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import toast from "react-hot-toast";
 
 import { IssueTokenForm } from "@/components/tokens/issue-token-form";
 import { TokenActions } from "@/components/tokens/token-actions";
@@ -26,6 +27,7 @@ import {
   TOKEN_STATUS_LABELS,
 } from "@/components/ui/status";
 import { useCounters, useTokens } from "@/hooks/use-resources";
+import { dateRangeSchema } from "@/lib/validators";
 import type { TokenStatus } from "@/types";
 
 const STATUS_FILTERS: Array<{ value: TokenStatus | "all"; label: string }> = [
@@ -63,6 +65,25 @@ export default function TokensPage() {
     offset: page * PAGE_SIZE,
   });
   const [formError, setFormError] = useState<string | null>(null);
+  const [rangeError, setRangeError] = useState<string | null>(null);
+
+  function applyDate(kind: "from" | "to", value: string) {
+    const candidate = {
+      from: kind === "from" ? value : fromDate,
+      to: kind === "to" ? value : toDate,
+    };
+    const parsed = dateRangeSchema.safeParse(candidate);
+    if (!parsed.success) {
+      const message = parsed.error.issues[0]?.message ?? "Invalid date range";
+      setRangeError(message);
+      toast.error(message);
+      return;
+    }
+    setRangeError(null);
+    resetPage();
+    if (kind === "from") setFromDate(value);
+    else setToDate(value);
+  }
 
   const counterName = (counterId: number) =>
     counters?.find((c) => c.id === counterId)?.name ?? `Counter #${counterId}`;
@@ -161,10 +182,8 @@ export default function TokensPage() {
                   id="tokens-from"
                   type="date"
                   value={fromDate}
-                  onChange={(e) => {
-                    setFromDate(e.target.value);
-                    resetPage();
-                  }}
+                  aria-invalid={!!rangeError}
+                  onChange={(e) => applyDate("from", e.target.value)}
                 />
               </div>
               <div>
@@ -175,13 +194,12 @@ export default function TokensPage() {
                   id="tokens-to"
                   type="date"
                   value={toDate}
-                  onChange={(e) => {
-                    setToDate(e.target.value);
-                    resetPage();
-                  }}
+                  aria-invalid={!!rangeError}
+                  onChange={(e) => applyDate("to", e.target.value)}
                 />
               </div>
             </div>
+            {rangeError && <p className="mb-2 text-xs text-destructive">{rangeError}</p>}
 
             {error && <Alert variant="destructive">{error}</Alert>}
             {loading && !tokens ? (

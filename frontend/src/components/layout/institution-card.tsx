@@ -2,7 +2,10 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { Building2, MessageCircle, Pencil } from "lucide-react";
+import toast from "react-hot-toast";
 
 import {
   Dialog,
@@ -22,6 +25,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useInstitution } from "@/hooks/use-resources";
 import { api } from "@/lib/api-client";
 import { useAuthStore } from "@/store/auth";
+import { institutionSchema, type InstitutionFormValues } from "@/lib/validators";
 
 export function InstitutionCard() {
   const { institution, reload } = useInstitution();
@@ -29,40 +33,46 @@ export function InstitutionCard() {
   const logout = useAuthStore((state) => state.logout);
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [type, setType] = useState("");
-  const [whatsappNumber, setWhatsappNumber] = useState("");
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deactivating, setDeactivating] = useState(false);
 
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors, isSubmitting },
+  } = useForm<InstitutionFormValues>({
+    resolver: zodResolver(institutionSchema),
+    defaultValues: { name: "", type: "", whatsappNumber: "" },
+  });
+
   function openEdit() {
     if (institution) {
-      setName(institution.name);
-      setType(institution.type ?? "");
-      setWhatsappNumber(institution.whatsapp_number ?? "");
+      reset({
+        name: institution.name,
+        type: institution.type ?? "",
+        whatsappNumber: institution.whatsapp_number ?? "",
+      });
     }
     setError(null);
     setOpen(true);
   }
 
-  async function onSubmit(event: React.FormEvent) {
-    event.preventDefault();
-    setBusy(true);
+  async function onSubmit(values: InstitutionFormValues) {
     setError(null);
     try {
       await api.patch("/institutions/me", {
-        name: name.trim(),
-        type: type.trim() || null,
-        whatsapp_number:
-          whatsappNumber.trim() ? whatsappNumber.replace(/[^\d+]/g, "") : null,
+        name: values.name,
+        type: values.type || null,
+        whatsapp_number: values.whatsappNumber ? values.whatsappNumber : null,
       });
+      toast.success("Institution updated");
       setOpen(false);
       reload();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Save failed");
-    } finally {
-      setBusy(false);
+      const message = err instanceof Error ? err.message : "Save failed";
+      setError(message);
+      toast.error(message);
     }
   }
 
@@ -77,10 +87,13 @@ export function InstitutionCard() {
     setDeactivating(true);
     try {
       await api.delete("/institutions/me");
+      toast.success(`${institution.name} deactivated`);
       logout();
       router.replace("/login");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Deactivation failed");
+      const message = err instanceof Error ? err.message : "Deactivation failed";
+      setError(message);
+      toast.error(message);
       setDeactivating(false);
     }
   }
@@ -101,8 +114,8 @@ export function InstitutionCard() {
           <Dialog
             open={open}
             onOpenChange={(next) => {
-              setOpen(next);
               if (next) openEdit();
+              else setOpen(false);
             }}
           >
             <DialogTrigger render={<Button size="xs" variant="outline" />}>
@@ -117,42 +130,47 @@ export function InstitutionCard() {
                   number enables customer token flows via WhatsApp.
                 </DialogDescription>
               </DialogHeader>
-              <form onSubmit={onSubmit} className="space-y-4">
+              <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-4">
                 {error && <Alert variant="destructive">{error}</Alert>}
                 <div className="space-y-2">
                   <Label htmlFor="inst-name">Name</Label>
-                  <Input
-                    id="inst-name"
-                    required
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                  />
+                  <Input id="inst-name" aria-invalid={!!errors.name} {...register("name")} />
+                  {errors.name && (
+                    <p className="text-xs text-destructive">{errors.name.message}</p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="inst-type">Type (optional)</Label>
                   <Input
                     id="inst-type"
-                    value={type}
-                    onChange={(e) => setType(e.target.value)}
                     placeholder="e.g. hospital, bank, university"
+                    aria-invalid={!!errors.type}
+                    {...register("type")}
                   />
+                  {errors.type && (
+                    <p className="text-xs text-destructive">{errors.type.message}</p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="inst-whatsapp">WhatsApp number (optional)</Label>
                   <Input
                     id="inst-whatsapp"
                     type="tel"
-                    value={whatsappNumber}
-                    onChange={(e) => setWhatsappNumber(e.target.value)}
                     placeholder="+251911234567"
+                    aria-invalid={!!errors.whatsappNumber}
+                    {...register("whatsappNumber")}
                   />
-                  <p className="text-xs text-muted-foreground">
-                    International format with country code; digits only after saving.
-                  </p>
+                  {errors.whatsappNumber ? (
+                    <p className="text-xs text-destructive">{errors.whatsappNumber.message}</p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      International format with country code.
+                    </p>
+                  )}
                 </div>
                 <DialogFooter showCloseButton>
-                  <Button type="submit" disabled={busy}>
-                    {busy ? "Saving…" : "Save"}
+                  <Button type="submit" disabled={isSubmitting}>
+                    {isSubmitting ? "Saving…" : "Save"}
                   </Button>
                 </DialogFooter>
               </form>

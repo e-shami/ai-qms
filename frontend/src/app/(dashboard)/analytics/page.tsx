@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Download, Hourglass, TicketCheck, TrendingUp, UserX } from "lucide-react";
+import toast from "react-hot-toast";
 
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -12,6 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Panel } from "@/components/ui/status";
 import { api } from "@/lib/api-client";
 import { downloadCsv, toCsv } from "@/lib/csv";
+import { dateRangeSchema } from "@/lib/validators";
 import type { AnalyticsSummary, TokenStatus } from "@/types";
 
 const STATUS_LABELS: Record<TokenStatus | string, string> = {
@@ -72,6 +74,21 @@ export default function AnalyticsPage() {
   const [preset, setPreset] = useState<Preset>("today");
   const [fromInput, setFromInput] = useState("");
   const [toInput, setToInput] = useState("");
+  const [rangeError, setRangeError] = useState<string | null>(null);
+
+  function applyDate(kind: "from" | "to", value: string) {
+    const candidate = { from: kind === "from" ? value : fromInput, to: kind === "to" ? value : toInput };
+    const parsed = dateRangeSchema.safeParse(candidate);
+    if (!parsed.success) {
+      const message = parsed.error.issues[0]?.message ?? "Invalid date range";
+      setRangeError(message);
+      toast.error(message);
+      return;
+    }
+    setRangeError(null);
+    if (kind === "from") setFromInput(value);
+    else setToInput(value);
+  }
 
   // Custom dates take over once either input is set.
   const customFrom = dayInputToIso(fromInput);
@@ -163,10 +180,13 @@ export default function AnalyticsPage() {
           rows
         )
       );
+      toast.success(`Exported ${rows.length} tokens to CSV`);
     } catch {
       // export is best-effort; surface nothing beyond a silent no-op is bad,
       // so re-use the error banner via state
-      setError("CSV export failed — check your connection and try again.");
+      const message = "CSV export failed — check your connection and try again.";
+      setError(message);
+      toast.error(message);
     }
   }
 
@@ -222,7 +242,8 @@ export default function AnalyticsPage() {
             id="analytics-from"
             type="date"
             value={fromInput}
-            onChange={(e) => setFromInput(e.target.value)}
+            aria-invalid={!!rangeError}
+            onChange={(e) => applyDate("from", e.target.value)}
           />
         </div>
         <div>
@@ -233,10 +254,12 @@ export default function AnalyticsPage() {
             id="analytics-to"
             type="date"
             value={toInput}
-            onChange={(e) => setToInput(e.target.value)}
+            aria-invalid={!!rangeError}
+            onChange={(e) => applyDate("to", e.target.value)}
           />
         </div>
       </div>
+      {rangeError && <p className="text-xs text-destructive">{rangeError}</p>}
 
       {error && <Alert variant="destructive">{error}</Alert>}
 
