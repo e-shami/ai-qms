@@ -27,3 +27,9 @@ class SlidingWindowLimiter:
 login_limiter = SlidingWindowLimiter(
     settings.LOGIN_RATE_LIMIT, settings.LOGIN_RATE_WINDOW_SECONDS
 )
+public_issue_limiter = SlidingWindowLimiter(
+    settings.PUBLIC_ISSUE_RATE_LIMIT, settings.PUBLIC_ISSUE_RATE_WINDOW_SECONDS
+)
+public_lookup_limiter = SlidingWindowLimiter(
+    settings.PUBLIC_LOOKUP_RATE_LIMIT, settings.PUBLIC_LOOKUP_RATE_WINDOW_SECONDS
+)

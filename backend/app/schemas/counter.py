@@ -22,3 +22,11 @@ class CounterOut(BaseModel):
     type: str | None
     is_active: bool
     created_at: datetime
+
+
+class PublicCounterOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    type: str | None

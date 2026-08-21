@@ -11,6 +11,7 @@ class InstitutionCreate(BaseModel):
 class InstitutionUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     type: str | None = Field(default=None, max_length=64)
+    whatsapp_number: str | None = Field(default=None, max_length=32)
 
 
 class InstitutionOut(BaseModel):
@@ -19,5 +20,14 @@ class InstitutionOut(BaseModel):
     id: int
     name: str
     type: str | None
+    whatsapp_number: str | None
     is_active: bool
     created_at: datetime
+
+
+class PublicInstitutionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    type: str | None

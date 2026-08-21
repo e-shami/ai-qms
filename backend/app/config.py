@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     LOGIN_RATE_LIMIT: int = 5
     LOGIN_RATE_WINDOW_SECONDS: int = 300
+    PUBLIC_ISSUE_RATE_LIMIT: int = 10
+    PUBLIC_ISSUE_RATE_WINDOW_SECONDS: int = 60
+    PUBLIC_LOOKUP_RATE_LIMIT: int = 60
+    PUBLIC_LOOKUP_RATE_WINDOW_SECONDS: int = 60
 
 
 settings = Settings()

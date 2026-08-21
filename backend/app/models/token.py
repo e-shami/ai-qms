@@ -30,6 +30,7 @@ class Token(Base):
     )
     token_number: Mapped[str] = mapped_column(String(32), nullable=False)
     customer_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    customer_phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
     status: Mapped[TokenStatus] = mapped_column(
         Enum(TokenStatus, name="token_status"), nullable=False, default=TokenStatus.WAITING
     )
