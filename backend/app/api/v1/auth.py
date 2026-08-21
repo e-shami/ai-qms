@@ -7,7 +7,9 @@ from app.api.deps import get_current_user
 from app.database import get_db
 from app.models import Institution, User
 from app.schemas.auth import (
+    ChangePasswordRequest,
     LoginRequest,
+    ProfileUpdate,
     RefreshRequest,
     RegisterRequest,
     TokenResponse,
@@ -117,3 +119,47 @@ def refresh(payload: RefreshRequest, db: Session = Depends(get_db)) -> TokenResp
 @router.get("/me", response_model=UserOut)
 def me(user: User = Depends(get_current_user)) -> User:
     return user
+
+
+@router.patch("/me", response_model=UserOut)
+def update_profile(
+    payload: ProfileUpdate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> User:
+    if payload.email is not None and payload.email != user.email:
+        existing = db.execute(
+            select(User).where(User.email == payload.email, User.id != user.id)
+        ).scalar_one_or_none()
+        if existing is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail="Email already registered"
+            )
+        user.email = payload.email
+    if payload.full_name is not None:
+        user.full_name = payload.full_name
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@router.post("/change-password", response_model=TokenResponse)
+def change_password(
+    payload: ChangePasswordRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> TokenResponse:
+    if not verify_password(payload.current_password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect",
+        )
+    user.hashed_password = hash_password(payload.new_password)
+    # Invalidate every existing refresh token, then re-issue for this session
+    # so the current client stays signed in everywhere else logs out.
+    user.refresh_token_version += 1
+    db.commit()
+    return TokenResponse(
+        access_token=create_access_token(user.id, user.role, user.institution_id),
+        refresh_token=create_refresh_token(user.id, user.refresh_token_version),
+    )

@@ -6,6 +6,7 @@ import { LogOut, Menu } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { useInstitution } from "@/hooks/use-resources";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/auth";
@@ -17,6 +18,8 @@ const NAV_ITEMS = [
   { href: "/counters", label: "Counters" },
   { href: "/personnel", label: "Personnel" },
   { href: "/analytics", label: "Analytics" },
+  { href: "/display", label: "Lobby display" },
+  { href: "/settings", label: "Settings" },
 ];
 
 export function Topbar() {
@@ -54,6 +57,7 @@ export function Topbar() {
         <span className="hidden text-xs text-muted-foreground sm:inline">
           {institution ? `Institution #${institution.id}` : ""}
         </span>
+        <ThemeToggle />
         <Button variant="ghost" size="sm" onClick={handleLogout}>
           <LogOut />
           Sign out

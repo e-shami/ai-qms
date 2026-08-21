@@ -39,15 +39,16 @@ export function useQueue() {
     queueSocket.connect();
     const unsubscribe = queueSocket.subscribe((data) => {
       setSnapshot(data);
-      setConnected(true);
       setError(null);
     });
+    const unsubscribeState = queueSocket.subscribeState(setConnected);
     // WebSocket delivers updates; poll as a fallback if the socket is down.
     pollRef.current = setInterval(() => fetchSnapshot(), 30000);
 
     return () => {
       mountedRef.current = false;
       unsubscribe();
+      unsubscribeState();
       if (pollRef.current) clearInterval(pollRef.current);
     };
   }, [accessToken, fetchSnapshot]);

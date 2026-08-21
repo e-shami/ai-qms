@@ -2,6 +2,8 @@ import { useAuthStore } from "@/store/auth";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1";
 
+export { API_BASE };
+
 export class ApiError extends Error {
   status: number;
 
@@ -9,6 +11,20 @@ export class ApiError extends Error {
     super(message);
     this.status = status;
   }
+}
+
+let refreshInFlight: Promise<boolean> | null = null;
+
+function refreshOnce(): Promise<boolean> {
+  if (!refreshInFlight) {
+    refreshInFlight = useAuthStore
+      .getState()
+      .refresh()
+      .finally(() => {
+        refreshInFlight = null;
+      });
+  }
+  return refreshInFlight;
 }
 
 async function request<T>(
@@ -26,7 +42,9 @@ async function request<T>(
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
 
   if (res.status === 401 && retryAfterRefresh) {
-    const refreshed = await useAuthStore.getState().refresh();
+    // Share one refresh across concurrent 401s — rotation would otherwise
+    // invalidate the token a parallel request is about to use.
+    const refreshed = await refreshOnce();
     if (!refreshed) throw new ApiError(401, "Session expired, please log in again");
     return request<T>(path, options, false);
   }

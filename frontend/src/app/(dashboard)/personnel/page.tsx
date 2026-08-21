@@ -33,6 +33,89 @@ import { api } from "@/lib/api-client";
 import { useAuthStore } from "@/store/auth";
 import type { Personnel } from "@/types";
 
+const NO_COUNTER = "__none__";
+
+function StaffAccountDialog({
+  member,
+  onSaved,
+  onError,
+}: {
+  member: Personnel;
+  onSaved: () => void;
+  onError: (message: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function onSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    try {
+      await api.post(`/personnel/${member.id}/account`, {
+        email,
+        password,
+      });
+      setOpen(false);
+      setEmail("");
+      setPassword("");
+      onSaved();
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Account creation failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger render={<Button size="xs" variant="outline" />}>
+        Create login
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Create login for {member.name}</DialogTitle>
+          <DialogDescription>
+            Creates a staff account (read-only queue access) linked to this person.
+            Share the password securely.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={onSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="staff-email">Email</Label>
+            <Input
+              id="staff-email"
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="staff@institution.com"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="staff-password">Password</Label>
+            <Input
+              id="staff-password"
+              type="password"
+              required
+              minLength={8}
+              autoComplete="new-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </div>
+          <DialogFooter showCloseButton>
+            <Button type="submit" disabled={busy}>
+              {busy ? "Creating…" : "Create account"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function PersonnelFormDialog({
   member,
   counters,
@@ -48,7 +131,7 @@ function PersonnelFormDialog({
   const [name, setName] = useState(member?.name ?? "");
   const [title, setTitle] = useState(member?.title ?? "");
   const [counterId, setCounterId] = useState(
-    member?.counter_id != null ? String(member.counter_id) : ""
+    member?.counter_id != null ? String(member.counter_id) : NO_COUNTER
   );
   const [busy, setBusy] = useState(false);
 
@@ -59,7 +142,7 @@ function PersonnelFormDialog({
       const payload = {
         name: name.trim(),
         title: title.trim() || null,
-        counter_id: counterId ? Number(counterId) : null,
+        counter_id: counterId === NO_COUNTER ? null : Number(counterId),
       };
       if (member) {
         await api.patch(`/personnel/${member.id}`, payload);
@@ -119,13 +202,13 @@ function PersonnelFormDialog({
             <Label htmlFor="personnel-counter">Counter (optional)</Label>
             <Select
               value={counterId}
-              onValueChange={(value) => setCounterId(value ?? "")}
+              onValueChange={(value) => setCounterId(value ?? NO_COUNTER)}
             >
               <SelectTrigger className="w-full">
                 <SelectValue placeholder="No counter assigned" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="" label="No counter assigned">
+                <SelectItem value={NO_COUNTER} label="No counter assigned">
                   No counter assigned
                 </SelectItem>
                 {counters.map((counter) => (
@@ -166,6 +249,16 @@ export default function PersonnelPage() {
       reload();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Deactivation failed");
+    }
+  }
+
+  async function reactivate(member: Personnel) {
+    try {
+      await api.post(`/personnel/${member.id}/activate`);
+      setActionError(null);
+      reload();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Reactivation failed");
     }
   }
 
@@ -212,6 +305,7 @@ export default function PersonnelPage() {
                 <TableHead className="hidden sm:table-cell">Title</TableHead>
                 <TableHead>Counter</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead className="hidden md:table-cell">Login</TableHead>
                 {isAdmin && <TableHead className="text-right">Actions</TableHead>}
               </TableRow>
             </TableHeader>
@@ -232,22 +326,42 @@ export default function PersonnelPage() {
                       <Badge variant="secondary">Inactive</Badge>
                     )}
                   </TableCell>
+                  <TableCell className="hidden text-muted-foreground md:table-cell">
+                    {member.user_id != null ? (
+                      <Badge variant="outline">Has login</Badge>
+                    ) : (
+                      "—"
+                    )}
+                  </TableCell>
                   {isAdmin && (
                     <TableCell className="text-right">
-                      <div className="flex justify-end gap-1.5">
+                      <div className="flex flex-wrap justify-end gap-1.5">
                         <PersonnelFormDialog
                           member={member}
                           counters={counters ?? []}
                           onSaved={reload}
                           onError={setActionError}
                         />
-                        {member.is_active && (
-                          <Button
-                            size="xs"
-                            variant="destructive"
-                            onClick={() => deactivate(member)}
-                          >
-                            Deactivate
+                        {member.is_active ? (
+                          <>
+                            {member.user_id == null && (
+                              <StaffAccountDialog
+                                member={member}
+                                onSaved={reload}
+                                onError={setActionError}
+                              />
+                            )}
+                            <Button
+                              size="xs"
+                              variant="destructive"
+                              onClick={() => deactivate(member)}
+                            >
+                              Deactivate
+                            </Button>
+                          </>
+                        ) : (
+                          <Button size="xs" onClick={() => reactivate(member)}>
+                            Activate
                           </Button>
                         )}
                       </div>

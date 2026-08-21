@@ -62,7 +62,7 @@ export function LiveQueueView({ compact = false }: { compact?: boolean }) {
         </div>
       </div>
       {visible.map((status) => (
-        <CounterQueue key={status.counter.id} status={status} />
+        <CounterQueue key={status.counter.id} status={status} onChanged={reload} />
       ))}
     </div>
   );

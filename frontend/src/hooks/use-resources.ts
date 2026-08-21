@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { api } from "@/lib/api-client";
 import { useAuthStore } from "@/store/auth";
-import type { Counter, Institution, Personnel, Token } from "@/types";
+import type { Counter, Institution, Personnel, TokenPage } from "@/types";
 
 function useResource<T>(path: string, enabled: boolean) {
   const [data, setData] = useState<T | null>(null);
@@ -71,12 +71,24 @@ export function useInstitution() {
   return { institution: data, ...rest };
 }
 
-export function useTokens(counterId?: number, status?: string) {
+export function useTokens(options?: {
+  counterId?: number;
+  status?: string;
+  issuedFrom?: string;
+  issuedTo?: string;
+  limit?: number;
+  offset?: number;
+}) {
   const authed = useAuthed();
   const params = new URLSearchParams();
-  if (counterId) params.set("counter_id", String(counterId));
-  if (status) params.set("status", status);
+  if (options?.counterId) params.set("counter_id", String(options.counterId));
+  if (options?.status) params.set("status", options.status);
+  if (options?.issuedFrom) params.set("issued_from", options.issuedFrom);
+  if (options?.issuedTo) params.set("issued_to", options.issuedTo);
+  if (options?.limit) params.set("limit", String(options.limit));
+  if (options?.offset) params.set("offset", String(options.offset));
   const qs = params.toString();
-  const { data, ...rest } = useResource<Token[]>(`/tokens${qs ? `?${qs}` : ""}`, authed);
-  return { tokens: data, ...rest };
+  const key = `/tokens${qs ? `?${qs}` : ""}`;
+  const { data, ...rest } = useResource<TokenPage>(key, authed);
+  return { tokens: data?.items ?? null, total: data?.total ?? 0, ...rest };
 }

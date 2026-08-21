@@ -1,11 +1,13 @@
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.database import get_db
 from app.models import Counter, Token, TokenStatus, User
-from app.schemas.token import TokenCreate, TokenOut
+from app.schemas.token import TokenCreate, TokenOut, TokenPage
 from app.services import queue_service, token_service
 from app.websocket.manager import manager
 
@@ -28,26 +30,50 @@ async def issue_token(
         institution_id=user.institution_id,
         counter_id=payload.counter_id,
         customer_name=payload.customer_name,
+        customer_phone=payload.customer_phone,
     )
     await _broadcast_queue(db, user.institution_id)
     return TokenOut.model_validate(token).model_copy(update={"position": position})
 
 
-@router.get("", response_model=list[TokenOut])
+@router.get("", response_model=TokenPage)
 def list_tokens(
     counter_id: int | None = None,
     status: TokenStatus | None = Query(default=None),
+    issued_from: datetime | None = Query(default=None),
+    issued_to: datetime | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> list[TokenOut]:
+) -> TokenPage:
     query = select(Token).where(Token.institution_id == user.institution_id)
     if counter_id is not None:
         token_service.get_owned_counter(db, user.institution_id, counter_id, active_only=False)
         query = query.where(Token.counter_id == counter_id)
     if status is not None:
         query = query.where(Token.status == status)
-    tokens = db.execute(query.order_by(Token.issued_at.desc(), Token.id.desc())).scalars().all()
-    return [queue_service.token_out(db, token) for token in tokens]
+    if issued_from is not None:
+        query = query.where(Token.issued_at >= issued_from)
+    if issued_to is not None:
+        query = query.where(Token.issued_at < issued_to)
+
+    total = db.execute(
+        select(func.count()).select_from(query.subquery())
+    ).scalar_one()
+    tokens = (
+        db.execute(
+            query.order_by(Token.issued_at.desc(), Token.id.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        .scalars()
+        .all()
+    )
+    return TokenPage(
+        items=[queue_service.token_out(db, token) for token in tokens],
+        total=int(total),
+    )
 
 
 @router.post("/{token_id}/call", response_model=TokenOut)

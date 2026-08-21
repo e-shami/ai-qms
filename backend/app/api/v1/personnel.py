@@ -5,7 +5,13 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, require_roles
 from app.database import get_db
 from app.models import Counter, Personnel, User
-from app.schemas.personnel import PersonnelCreate, PersonnelOut, PersonnelUpdate
+from app.schemas.personnel import (
+    PersonnelCreate,
+    PersonnelOut,
+    PersonnelUpdate,
+    StaffAccountCreate,
+)
+from app.utils.security import hash_password
 
 router = APIRouter(prefix="/personnel", tags=["personnel"])
 
@@ -92,3 +98,55 @@ def deactivate_personnel(
     personnel = _owned_personnel(db, user.institution_id, personnel_id)
     personnel.is_active = False
     db.commit()
+
+
+@router.post("/{personnel_id}/activate", response_model=PersonnelOut)
+def activate_personnel(
+    personnel_id: int,
+    user: User = Depends(require_roles("admin")),
+    db: Session = Depends(get_db),
+) -> Personnel:
+    personnel = _owned_personnel(db, user.institution_id, personnel_id)
+    personnel.is_active = True
+    db.commit()
+    db.refresh(personnel)
+    return personnel
+
+
+@router.post("/{personnel_id}/account", response_model=PersonnelOut, status_code=status.HTTP_201_CREATED)
+def create_staff_account(
+    personnel_id: int,
+    payload: StaffAccountCreate,
+    user: User = Depends(require_roles("admin")),
+    db: Session = Depends(get_db),
+) -> Personnel:
+    """Create a staff login and link it to a personnel record."""
+    personnel = _owned_personnel(db, user.institution_id, personnel_id)
+    if not personnel.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Activate the personnel record first",
+        )
+    if personnel.user_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This staff member already has a login account",
+        )
+    existing = db.execute(select(User).where(User.email == payload.email)).scalar_one_or_none()
+    if existing is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Email already registered"
+        )
+    staff_user = User(
+        email=payload.email,
+        hashed_password=hash_password(payload.password),
+        full_name=personnel.name,
+        role="staff",
+        institution_id=user.institution_id,
+    )
+    db.add(staff_user)
+    db.flush()
+    personnel.user_id = staff_user.id
+    db.commit()
+    db.refresh(personnel)
+    return personnel

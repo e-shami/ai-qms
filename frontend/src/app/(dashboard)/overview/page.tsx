@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { CheckCircle2, Clock3, Users, XCircle } from "lucide-react";
 
 import { LiveQueueView } from "@/components/queue/live-queue-view";
@@ -9,39 +10,55 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useQueue } from "@/hooks/use-queue";
-import { useTokens } from "@/hooks/use-resources";
+import { api } from "@/lib/api-client";
 import { useAuthStore } from "@/store/auth";
+import type { AnalyticsSummary } from "@/types";
 
-function isToday(value: string | null | undefined): boolean {
-  if (!value) return false;
-  const date = new Date(value);
-  const now = new Date();
-  return (
-    date.getFullYear() === now.getFullYear() &&
-    date.getMonth() === now.getMonth() &&
-    date.getDate() === now.getDate()
-  );
+function localDayIso(daysBack: number, endOfDay = false): string {
+  const date = new Date();
+  date.setDate(date.getDate() - daysBack);
+  date.setHours(0, 0, 0, 0);
+  if (endOfDay) date.setTime(date.getTime() + 86400000);
+  return date.toISOString();
 }
 
 export default function OverviewPage() {
   const { snapshot, loading, connected } = useQueue();
-  const { tokens, loading: tokensLoading } = useTokens();
   const user = useAuthStore((state) => state.user);
+  const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const tzOffsetMinutes = -new Date().getTimezoneOffset();
+    api
+      .get<AnalyticsSummary>(
+        `/analytics/summary?from=${encodeURIComponent(localDayIso(0))}&to=${encodeURIComponent(
+          localDayIso(-1, true)
+        )}&tz_offset_minutes=${tzOffsetMinutes}`
+      )
+      .then((data) => {
+        if (!cancelled) setSummary(data);
+      })
+      .catch(() => {
+        // KPIs stay at zero on failure; live queue still works
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const waiting =
-    snapshot?.counters.reduce((sum, c) => sum + c.waiting_count, 0) ?? 0;
+    snapshot?.counters.reduce((sum, c) => sum + c.waiting_count, 0) ?? summary?.waiting_now ?? 0;
   const inService =
-    snapshot?.counters.reduce((sum, c) => sum + c.in_service_count, 0) ?? 0;
-
-  const todayTokens = (tokens ?? []).filter((t) => isToday(t.issued_at));
-  const servedToday = todayTokens.filter((t) => t.status === "served").length;
-  const noShowsToday = todayTokens.filter((t) => t.status === "no_show").length;
+    snapshot?.counters.reduce((sum, c) => sum + c.in_service_count, 0) ??
+    summary?.in_service_now ??
+    0;
 
   const kpis = [
     { label: "Waiting", value: waiting, icon: Clock3 },
     { label: "In service", value: inService, icon: Users },
-    { label: "Served today", value: servedToday, icon: CheckCircle2 },
-    { label: "No-shows today", value: noShowsToday, icon: XCircle },
+    { label: "Served today", value: summary?.served ?? 0, icon: CheckCircle2 },
+    { label: "No-shows today", value: summary?.no_shows ?? 0, icon: XCircle },
   ];
 
   return (
@@ -107,7 +124,15 @@ export default function OverviewPage() {
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Tokens today</span>
-              <span className="font-medium">{tokensLoading ? "…" : todayTokens.length}</span>
+              <span className="font-medium tabular-nums">{summary?.issued ?? "…"}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Avg wait today</span>
+              <span className="font-medium">
+                {summary?.avg_wait_min == null
+                  ? "—"
+                  : `${Math.round(summary.avg_wait_min)} min`}
+              </span>
             </div>
           </CardContent>
         </Card>

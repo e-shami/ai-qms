@@ -5,13 +5,13 @@ import { usePathname } from "next/navigation";
 import {
   BarChart3,
   Gauge,
+  Monitor,
   Radio,
   ScanLine,
-  Settings2,
+  Settings,
   Ticket,
   Users,
 } from "lucide-react";
-
 import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
@@ -21,6 +21,8 @@ const NAV_ITEMS = [
   { href: "/counters", label: "Counters", icon: ScanLine },
   { href: "/personnel", label: "Personnel", icon: Users },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
+  { href: "/display", label: "Lobby display", icon: Monitor },
+  { href: "/settings", label: "Settings", icon: Settings },
 ];
 
 export function Sidebar() {
@@ -30,7 +32,7 @@ export function Sidebar() {
     <aside className="fixed inset-y-0 left-0 z-30 hidden w-56 flex-col border-r bg-card lg:flex">
       <Link href="/overview" className="flex h-14 items-center gap-2 border-b px-4">
         <span className="flex size-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
-          <Settings2 className="size-4" />
+          <Ticket className="size-4" />
         </span>
         <span className="text-sm font-semibold tracking-tight">AI-QMS</span>
       </Link>

@@ -141,6 +141,16 @@ export default function CountersPage() {
     }
   }
 
+  async function reactivate(counter: Counter) {
+    try {
+      await api.post(`/counters/${counter.id}/activate`);
+      setActionError(null);
+      reload();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Reactivation failed");
+    }
+  }
+
   const activeCount = (counterId: number) => {
     const status = snapshot?.counters.find((c) => c.counter.id === counterId);
     return status
@@ -212,13 +222,17 @@ export default function CountersPage() {
                           onSaved={reload}
                           onError={setActionError}
                         />
-                        {counter.is_active && (
+                        {counter.is_active ? (
                           <Button
                             size="xs"
                             variant="destructive"
                             onClick={() => deactivate(counter)}
                           >
                             Deactivate
+                          </Button>
+                        ) : (
+                          <Button size="xs" onClick={() => reactivate(counter)}>
+                            Activate
                           </Button>
                         )}
                       </div>

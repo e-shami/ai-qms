@@ -3,7 +3,8 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-import type { AuthResponse, RegisterPayload, User } from "@/types";
+import { api } from "@/lib/api-client";
+import type { AuthResponse, ProfileUpdate, RegisterPayload, User } from "@/types";
 
 interface AuthState {
   accessToken: string | null;
@@ -14,6 +15,8 @@ interface AuthState {
   clearSession: () => void;
   login: (email: string, password: string) => Promise<void>;
   register: (payload: RegisterPayload) => Promise<void>;
+  updateProfile: (payload: ProfileUpdate) => Promise<void>;
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   refresh: () => Promise<boolean>;
   logout: () => void;
 }
@@ -58,6 +61,24 @@ export const useAuthStore = create<AuthState>()(
         const body = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(body.detail ?? "Registration failed");
         const tokens = body as AuthResponse;
+        set({ accessToken: tokens.access_token, refreshToken: tokens.refresh_token });
+        // Fetch the profile immediately — role-gated UI depends on it.
+        const me = await fetch(`${API_BASE}/auth/me`, {
+          headers: { Authorization: `Bearer ${tokens.access_token}` },
+        });
+        if (me.ok) set({ user: (await me.json()) as User });
+      },
+
+      updateProfile: async (payload) => {
+        const user = await api.patch<User>("/auth/me", payload);
+        set({ user });
+      },
+
+      changePassword: async (currentPassword, newPassword) => {
+        const tokens = await api.post<AuthResponse>("/auth/change-password", {
+          current_password: currentPassword,
+          new_password: newPassword,
+        });
         set({ accessToken: tokens.access_token, refreshToken: tokens.refresh_token });
       },
 

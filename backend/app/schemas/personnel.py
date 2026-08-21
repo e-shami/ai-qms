@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
 class PersonnelCreate(BaseModel):
@@ -8,6 +8,11 @@ class PersonnelCreate(BaseModel):
     title: str | None = Field(default=None, max_length=128)
     counter_id: int | None = None
     user_id: int | None = None
+
+
+class StaffAccountCreate(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=128)
 
 
 class PersonnelUpdate(BaseModel):

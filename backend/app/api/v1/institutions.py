@@ -33,8 +33,10 @@ def update_own_institution(
     institution = _own_institution(user, db)
     if payload.name is not None:
         institution.name = payload.name
-    if payload.type is not None:
+    if payload.type is not None or "type" in payload.model_fields_set:
         institution.type = payload.type
+    if payload.whatsapp_number is not None or "whatsapp_number" in payload.model_fields_set:
+        institution.whatsapp_number = payload.whatsapp_number
     db.commit()
     db.refresh(institution)
     return institution

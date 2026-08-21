@@ -89,3 +89,16 @@ def deactivate_counter(
         )
     counter.is_active = False
     db.commit()
+
+
+@router.post("/{counter_id}/activate", response_model=CounterOut)
+def activate_counter(
+    counter_id: int,
+    user: User = Depends(require_roles("admin")),
+    db: Session = Depends(get_db),
+) -> Counter:
+    counter = get_owned_counter(db, user.institution_id, counter_id, active_only=False)
+    counter.is_active = True
+    db.commit()
+    db.refresh(counter)
+    return counter

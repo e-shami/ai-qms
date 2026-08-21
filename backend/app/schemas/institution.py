@@ -31,3 +31,4 @@ class PublicInstitutionOut(BaseModel):
     id: int
     name: str
     type: str | None
+    whatsapp_number: str | None
