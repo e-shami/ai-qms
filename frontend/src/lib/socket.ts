@@ -39,13 +39,16 @@ class QueueSocket {
         // ignore malformed frames
       }
     };
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       this.ws = null;
       this.emitState(false);
       if (this.disposed) return;
-      // Access tokens expire after 15 min — silently rotate before retrying
-      // (shared single-flight so we never race the api-client's refresh).
-      void refreshOnce().finally(() => {
+      // 1008 = backend rejected the token → rotate before retrying. Any other
+      // close (server restart, network blip) just reconnects — no refresh
+      // spam, and a transient outage must never log the user out.
+      const authRejected = event.code === 1008;
+      const attempt = authRejected ? refreshOnce() : Promise.resolve(true);
+      void attempt.finally(() => {
         if (!this.disposed && useAuthStore.getState().accessToken) {
           this.retryTimer = setTimeout(() => this.connect(), RECONNECT_MS);
         }

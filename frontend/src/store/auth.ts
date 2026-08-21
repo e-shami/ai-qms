@@ -4,7 +4,12 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 import { api } from "@/lib/api-client";
-import type { AuthResponse, ProfileUpdate, RegisterPayload, User } from "@/types";
+import type {
+  AuthResponse,
+  ProfileUpdate,
+  RegisterPayload,
+  User,
+} from "@/types";
 
 interface AuthState {
   accessToken: string | null;
@@ -16,12 +21,16 @@ interface AuthState {
   login: (email: string, password: string) => Promise<void>;
   register: (payload: RegisterPayload) => Promise<void>;
   updateProfile: (payload: ProfileUpdate) => Promise<void>;
-  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
+  changePassword: (
+    currentPassword: string,
+    newPassword: string,
+  ) => Promise<void>;
   refresh: () => Promise<boolean>;
   logout: () => void;
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1";
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1";
 
 export const useAuthStore = create<AuthState>()(
   persist(
@@ -31,12 +40,18 @@ export const useAuthStore = create<AuthState>()(
       user: null,
 
       setSession: (tokens, user = null) =>
-        set({ accessToken: tokens.access_token, refreshToken: tokens.refresh_token, user }),
+        set({
+          accessToken: tokens.access_token,
+          refreshToken: tokens.refresh_token,
+          user,
+        }),
 
       setUser: (user) => set({ user }),
-      clearSession: () => set({ accessToken: null, refreshToken: null, user: null }),
+      clearSession: () =>
+        set({ accessToken: null, refreshToken: null, user: null }),
 
       login: async (email, password) => {
+        console.log("Logging in with email:", email);
         const res = await fetch(`${API_BASE}/auth/login`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -45,7 +60,10 @@ export const useAuthStore = create<AuthState>()(
         const body = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(body.detail ?? "Login failed");
         const tokens = body as AuthResponse;
-        set({ accessToken: tokens.access_token, refreshToken: tokens.refresh_token });
+        set({
+          accessToken: tokens.access_token,
+          refreshToken: tokens.refresh_token,
+        });
         const me = await fetch(`${API_BASE}/auth/me`, {
           headers: { Authorization: `Bearer ${tokens.access_token}` },
         });
@@ -61,7 +79,10 @@ export const useAuthStore = create<AuthState>()(
         const body = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(body.detail ?? "Registration failed");
         const tokens = body as AuthResponse;
-        set({ accessToken: tokens.access_token, refreshToken: tokens.refresh_token });
+        set({
+          accessToken: tokens.access_token,
+          refreshToken: tokens.refresh_token,
+        });
         // Fetch the profile immediately — role-gated UI depends on it.
         const me = await fetch(`${API_BASE}/auth/me`, {
           headers: { Authorization: `Bearer ${tokens.access_token}` },
@@ -79,7 +100,10 @@ export const useAuthStore = create<AuthState>()(
           current_password: currentPassword,
           new_password: newPassword,
         });
-        set({ accessToken: tokens.access_token, refreshToken: tokens.refresh_token });
+        set({
+          accessToken: tokens.access_token,
+          refreshToken: tokens.refresh_token,
+        });
       },
 
       refresh: async () => {
@@ -91,15 +115,19 @@ export const useAuthStore = create<AuthState>()(
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ refresh_token: refreshToken }),
           });
-          const body = await res.json();
-          if (!res.ok) {
+          // Definitive rejection (expired/rotated) — session is truly dead.
+          if (res.status === 401) {
             get().clearSession();
             return false;
           }
+          // Server error or unreachable backend — keep the session; the
+          // user should not be logged out because of a transient outage.
+          if (!res.ok) return false;
+          const body = await res.json();
           set({ accessToken: body.access_token, refreshToken: body.refresh_token });
           return true;
         } catch {
-          get().clearSession();
+          // Network failure — keep the session and retry later.
           return false;
         }
       },
@@ -115,6 +143,6 @@ export const useAuthStore = create<AuthState>()(
         refreshToken: state.refreshToken,
         user: state.user,
       }),
-    }
-  )
+    },
+  ),
 );

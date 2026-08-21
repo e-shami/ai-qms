@@ -1,52 +1,107 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { api } from "@/lib/api-client";
 import { useAuthStore } from "@/store/auth";
 import type { Counter, Institution, Personnel, TokenPage } from "@/types";
 
+// --- tiny shared cache -------------------------------------------------------
+// Purpose: dedupe identical concurrent GETs (several components ask for the
+// same resource on one screen) and enable instant paint on quick remounts.
+// Short TTL keeps it a performance aid, never a staleness hazard — mutations
+// always call reload(), which bypasses the cache entirely.
+const CACHE_TTL_MS = 5000;
+const CACHE_MAX_ENTRIES = 50;
+
+type CacheEntry = { data: unknown; at: number };
+
+const responseCache = new Map<string, CacheEntry>();
+const inflight = new Map<string, Promise<unknown>>();
+
+function cacheGet(path: string): CacheEntry | undefined {
+  const hit = responseCache.get(path);
+  if (!hit) return undefined;
+  if (Date.now() - hit.at > CACHE_TTL_MS) {
+    responseCache.delete(path);
+    return undefined;
+  }
+  return hit;
+}
+
+function cacheSet(path: string, data: unknown): void {
+  if (!responseCache.has(path) && responseCache.size >= CACHE_MAX_ENTRIES) {
+    const oldest = responseCache.keys().next().value;
+    if (oldest !== undefined) responseCache.delete(oldest);
+  }
+  responseCache.set(path, { data, at: Date.now() });
+}
+
+function fetchShared<T>(path: string): Promise<T> {
+  const existing = inflight.get(path);
+  if (existing) return existing as Promise<T>;
+  const promise = api.get<T>(path).finally(() => inflight.delete(path));
+  inflight.set(path, promise);
+  return promise;
+}
+
 function useResource<T>(path: string, enabled: boolean) {
-  const [data, setData] = useState<T | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Instant paint: seed from cache synchronously so remounts don't flash skeletons.
+  const [entry, setEntry] = useState<{ path: string; data: T } | null>(() => {
+    if (!enabled) return null;
+    const hit = cacheGet(path);
+    return hit ? { path, data: hit.data as T } : null;
+  });
   const [error, setError] = useState<string | null>(null);
+  const mountedRef = useRef(true);
+
+  const load = useCallback(
+    (force: boolean) => {
+      if (!enabled) return;
+      if (!force) {
+        const hit = cacheGet(path);
+        if (hit) {
+          setEntry({ path, data: hit.data as T });
+          setError(null);
+          return;
+        }
+      }
+      const pending = force ? fetchShared<T>(path) : Promise.resolve(fetchShared<T>(path));
+      void pending
+        .then((data) => {
+          if (mountedRef.current) {
+            cacheSet(path, data);
+            setEntry({ path, data });
+            setError(null);
+          }
+        })
+        .catch((err) => {
+          if (mountedRef.current && err instanceof Error) setError(err.message);
+        });
+    },
+    [enabled, path]
+  );
 
   useEffect(() => {
+    mountedRef.current = true;
     if (!enabled) return;
-    let cancelled = false;
-    api
-      .get<T>(path)
-      .then((result) => {
-        if (cancelled) return;
-        setData(result);
-        setError(null);
-        setLoading(false);
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        setError(err instanceof Error ? err.message : "Request failed");
-        setLoading(false);
-      });
+    const kickoff = setTimeout(() => load(false), 0);
     return () => {
-      cancelled = true;
+      mountedRef.current = false;
+      clearTimeout(kickoff);
     };
-  }, [path, enabled]);
+  }, [enabled, load]);
 
-  const reload = useCallback(async () => {
-    if (!enabled) return;
-    setLoading(true);
-    try {
-      const result = await api.get<T>(path);
-      setData(result);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Request failed");
-    } finally {
-      setLoading(false);
-    }
-  }, [path, enabled]);
+  const reload = useCallback(() => {
+    setError(null);
+    load(true);
+  }, [load]);
 
-  return { data, loading, error, reload, setData };
+  // Data shown must belong to the current path (filters change paths).
+  const data = entry?.path === path ? entry.data : ((cacheGet(path)?.data as T | undefined) ?? null);
+  const loading = enabled && data === null && error === null;
+
+  return { data, loading, error, reload };
 }
 
 function useAuthed(): boolean {
