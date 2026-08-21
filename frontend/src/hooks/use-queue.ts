@@ -14,7 +14,9 @@ export function useQueue() {
   const [error, setError] = useState<string | null>(null);
   // Read the socket's current state at mount — a component mounting after the
   // socket already opened would otherwise wait forever for a change event.
-  const [connected, setConnected] = useState<boolean>(() => queueSocket.isConnected());
+  const [connected, setConnected] = useState<boolean>(() =>
+    queueSocket.isConnected(),
+  );
   const accessToken = useAuthStore((state) => state.accessToken);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const mountedRef = useRef(true);
@@ -38,6 +40,10 @@ export function useQueue() {
     mountedRef.current = true;
     if (!accessToken) return;
 
+    // Initial load — otherwise the first data arrives only at the first poll
+    // tick (30s) or the next WS broadcast (next mutation). Deferred off the
+    // effect body to keep the lint rule about sync setState happy.
+    const kickoff = setTimeout(() => void fetchSnapshot(), 0);
     queueSocket.connect();
     const unsubscribe = queueSocket.subscribe((data) => {
       setSnapshot(data);
@@ -49,6 +55,7 @@ export function useQueue() {
 
     return () => {
       mountedRef.current = false;
+      clearTimeout(kickoff);
       unsubscribe();
       unsubscribeState();
       if (pollRef.current) clearInterval(pollRef.current);
