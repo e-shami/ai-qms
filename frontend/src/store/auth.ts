@@ -51,7 +51,6 @@ export const useAuthStore = create<AuthState>()(
         set({ accessToken: null, refreshToken: null, user: null }),
 
       login: async (email, password) => {
-        console.log("Logging in with email:", email);
         const res = await fetch(`${API_BASE}/auth/login`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -115,19 +114,18 @@ export const useAuthStore = create<AuthState>()(
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ refresh_token: refreshToken }),
           });
-          // Definitive rejection (expired/rotated) — session is truly dead.
-          if (res.status === 401) {
+          const body = await res.json();
+          if (!res.ok) {
             get().clearSession();
             return false;
           }
-          // Server error or unreachable backend — keep the session; the
-          // user should not be logged out because of a transient outage.
-          if (!res.ok) return false;
-          const body = await res.json();
-          set({ accessToken: body.access_token, refreshToken: body.refresh_token });
+          set({
+            accessToken: body.access_token,
+            refreshToken: body.refresh_token,
+          });
           return true;
         } catch {
-          // Network failure — keep the session and retry later.
+          get().clearSession();
           return false;
         }
       },
