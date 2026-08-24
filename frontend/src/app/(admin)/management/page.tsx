@@ -1,12 +1,14 @@
 "use client";
 
+import { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { ScanLine, Users } from "lucide-react";
 
 import { CountersTab } from "@/components/management/counters-tab";
 import { StaffTab } from "@/components/management/staff-tab";
 import { PageHeader } from "@/components/shared/page-header";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Users, ScanLine } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const TAB_VALUES = ["staff", "counters"] as const;
 type TabValue = (typeof TAB_VALUES)[number];
@@ -15,7 +17,11 @@ function parseTab(raw: string | null): TabValue {
   return TAB_VALUES.includes(raw as TabValue) ? (raw as TabValue) : "staff";
 }
 
-export default function ManagementPage() {
+/**
+ * useSearchParams forces this subtree to render client-side only; the
+ * Suspense boundary keeps the rest of the route prerenderable.
+ */
+function ManagementContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const tab = parseTab(searchParams.get("tab"));
@@ -52,5 +58,21 @@ export default function ManagementPage() {
         </TabsContent>
       </Tabs>
     </>
+  );
+}
+
+export default function ManagementPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="space-y-6">
+          <Skeleton className="h-9 w-64" />
+          <Skeleton className="h-10 w-56" />
+          <Skeleton className="h-64" />
+        </div>
+      }
+    >
+      <ManagementContent />
+    </Suspense>
   );
 }
