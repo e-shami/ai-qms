@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import delete as sa_delete
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, require_roles
 from app.database import get_db
 from app.models import Institution, User
-from app.schemas.institution import InstitutionOut, InstitutionUpdate
+from app.schemas.institution import InstitutionOut, InstitutionUpdate, PurgeRequest
 
 router = APIRouter(prefix="/institutions", tags=["institutions"])
 
@@ -49,4 +50,24 @@ def deactivate_own_institution(
 ) -> None:
     institution = _own_institution(user, db)
     institution.is_active = False
+    db.commit()
+
+
+@router.post("/me/purge", status_code=status.HTTP_204_NO_CONTENT)
+def purge_own_institution(
+    payload: PurgeRequest,
+    user: User = Depends(require_roles("admin")),
+    db: Session = Depends(get_db),
+) -> None:
+    """Permanent delete. FK cascades remove counters, tokens, personnel,
+    and every account — sessions die on their next request."""
+    institution = _own_institution(user, db)
+    if payload.confirm_name.strip() != institution.name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Confirmation text does not match the institution name",
+        )
+    # A Core-level DELETE skips ORM relationship handling and lets every
+    # ON DELETE rule on the foreign keys resolve in one statement.
+    db.execute(sa_delete(Institution).where(Institution.id == institution.id))
     db.commit()

@@ -1,16 +1,34 @@
 import { refreshOnce } from "@/lib/api-client";
 import { useAuthStore } from "@/store/auth";
-import type { QueueSnapshot } from "@/types";
+import type { PresenceEntry, QueueSnapshot, SocketFrame } from "@/types";
 
 const WS_BASE = process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8000/ws";
 
-type Listener = (snapshot: QueueSnapshot) => void;
+type QueueListener = (snapshot: QueueSnapshot) => void;
+type PresenceListener = (entries: PresenceEntry[]) => void;
 type StateListener = (connected: boolean) => void;
 const RECONNECT_MS = 2000;
 
+/** Frames without a tag (older deployments) fall back to the queue handler. */
+function routeFrame(
+  raw: unknown,
+  onQueue: QueueListener,
+  onPresence: PresenceListener
+): void {
+  const frame = raw as SocketFrame | QueueSnapshot;
+  if (frame && typeof frame === "object" && "event" in frame) {
+    if (frame.event === "queue") onQueue(frame.data);
+    if (frame.event === "presence") onPresence(frame.data.entries);
+    return;
+  }
+  const snapshot = frame as QueueSnapshot;
+  if (snapshot && Array.isArray(snapshot.counters)) onQueue(snapshot);
+}
+
 class QueueSocket {
   private ws: WebSocket | null = null;
-  private listeners = new Set<Listener>();
+  private queueListeners = new Set<QueueListener>();
+  private presenceListeners = new Set<PresenceListener>();
   private stateListeners = new Set<StateListener>();
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private disposed = false;
@@ -33,8 +51,7 @@ class QueueSocket {
     ws.onopen = () => this.emitState(true);
     ws.onmessage = (event) => {
       try {
-        const snapshot = JSON.parse(event.data as string) as QueueSnapshot;
-        this.listeners.forEach((listener) => listener(snapshot));
+        routeFrame(JSON.parse(event.data as string), this.dispatchQueue, this.dispatchPresence);
       } catch {
         // ignore malformed frames
       }
@@ -57,10 +74,17 @@ class QueueSocket {
     ws.onerror = () => ws.close();
   }
 
-  subscribe(listener: Listener): () => void {
-    this.listeners.add(listener);
+  subscribe(listener: QueueListener): () => void {
+    this.queueListeners.add(listener);
     return () => {
-      this.listeners.delete(listener);
+      this.queueListeners.delete(listener);
+    };
+  }
+
+  subscribePresence(listener: PresenceListener): () => void {
+    this.presenceListeners.add(listener);
+    return () => {
+      this.presenceListeners.delete(listener);
     };
   }
 
@@ -78,6 +102,14 @@ class QueueSocket {
     this.ws = null;
     this.emitState(false);
   }
+
+  private dispatchQueue = (snapshot: QueueSnapshot) => {
+    this.queueListeners.forEach((listener) => listener(snapshot));
+  };
+
+  private dispatchPresence = (entries: PresenceEntry[]) => {
+    this.presenceListeners.forEach((listener) => listener(entries));
+  };
 
   private emitState(connected: boolean): void {
     this.connectedState = connected;

@@ -63,15 +63,19 @@ def analytics_summary(
     issued = len(tokens)
     served = sum(1 for t in tokens if t.status == TokenStatus.SERVED)
     no_shows = sum(1 for t in tokens if t.status == TokenStatus.NO_SHOW)
+    declined = sum(1 for t in tokens if t.status == TokenStatus.DECLINED)
     resolved = served + no_shows
 
     waits = [
         _minutes(t.issued_at, t.called_at) for t in tokens if t.called_at is not None
     ]
+    # Service duration is only meaningful for tokens that actually received
+    # service — no-shows and declines carry a completion timestamp but no
+    # service time.
     totals = [
         _minutes(t.issued_at, t.completed_at)
         for t in tokens
-        if t.completed_at is not None
+        if t.completed_at is not None and t.status == TokenStatus.SERVED
     ]
 
     offset = timedelta(minutes=tz_offset_minutes)
@@ -126,6 +130,7 @@ def analytics_summary(
                 issued=len(c_tokens),
                 served=sum(1 for t in c_tokens if t.status == TokenStatus.SERVED),
                 no_shows=sum(1 for t in c_tokens if t.status == TokenStatus.NO_SHOW),
+                declined=sum(1 for t in c_tokens if t.status == TokenStatus.DECLINED),
                 waiting=nonterminal_by_counter.get(counter.id, 0),
                 avg_wait_min=_avg(c_waits),
             )
@@ -153,6 +158,7 @@ def analytics_summary(
         issued=issued,
         served=served,
         no_shows=no_shows,
+        declined=declined,
         waiting_now=waiting_now,
         in_service_now=in_service_now,
         abandonment_rate=(no_shows / resolved) if resolved else None,

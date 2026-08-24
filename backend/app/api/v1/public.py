@@ -12,9 +12,9 @@ from app.models import Counter, Institution, Token
 from app.schemas.counter import PublicCounterOut
 from app.schemas.institution import PublicInstitutionOut
 from app.schemas.token import PublicTokenIssue, PublicTicketOut
-from app.services import queue_service, token_service
+from app.services import token_service
+from app.services.broadcast import broadcast_queue
 from app.utils.rate_limit import public_issue_limiter, public_lookup_limiter
-from app.websocket.manager import manager
 
 router = APIRouter(prefix="/public", tags=["public"])
 
@@ -90,8 +90,7 @@ async def issue_public_token(
         customer_name=payload.customer_name,
         customer_phone=payload.customer_phone,
     )
-    snapshot = queue_service.snapshot(db, institution.id).model_dump(mode="json")
-    await manager.broadcast(institution.id, snapshot)
+    await broadcast_queue(db, institution.id)
     ticket = token_service.build_public_ticket(db, token)
     ticket.position = position
     return ticket

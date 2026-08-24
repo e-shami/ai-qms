@@ -14,6 +14,7 @@ class CounterAnalytics(BaseModel):
     issued: int
     served: int
     no_shows: int
+    declined: int = 0
     waiting: int
     avg_wait_min: float | None = None
 
@@ -24,6 +25,7 @@ class AnalyticsSummary(BaseModel):
     issued: int
     served: int
     no_shows: int
+    declined: int = 0
     waiting_now: int
     in_service_now: int
     abandonment_rate: float | None

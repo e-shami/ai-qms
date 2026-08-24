@@ -16,6 +16,7 @@ class TokenStatus(str, enum.Enum):
     IN_SERVICE = "in_service"
     SERVED = "served"
     NO_SHOW = "no_show"
+    DECLINED = "declined"
 
 
 class Token(Base):
@@ -34,9 +35,14 @@ class Token(Base):
     status: Mapped[TokenStatus] = mapped_column(
         Enum(TokenStatus, name="token_status"), nullable=False, default=TokenStatus.WAITING
     )
+    decline_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    served_by_personnel_id: Mapped[int | None] = mapped_column(
+        ForeignKey("personnel.id", ondelete="SET NULL"), nullable=True
+    )
     issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
     called_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     institution: Mapped["Institution"] = relationship()
     counter: Mapped["Counter"] = relationship()
+    served_by: Mapped["Personnel"] = relationship()

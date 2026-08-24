@@ -6,10 +6,12 @@ from app.api.v1 import (
     auth,
     counters,
     institutions,
+    overview,
     personnel,
     predictions,
     public,
     queue,
+    staff,
     tokens,
 )
 from app.config import settings
@@ -33,6 +35,8 @@ app.include_router(counters.router, prefix=API_PREFIX)
 app.include_router(personnel.router, prefix=API_PREFIX)
 app.include_router(tokens.router, prefix=API_PREFIX)
 app.include_router(queue.router, prefix=API_PREFIX)
+app.include_router(staff.router, prefix=API_PREFIX)
+app.include_router(overview.router, prefix=API_PREFIX)
 app.include_router(predictions.router, prefix=API_PREFIX)
 app.include_router(analytics.router, prefix=API_PREFIX)
 app.include_router(public.router, prefix=API_PREFIX)

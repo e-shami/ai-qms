@@ -24,6 +24,9 @@ class Personnel(Base):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     title: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    work_status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="off_duty", server_default="off_duty"
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
 

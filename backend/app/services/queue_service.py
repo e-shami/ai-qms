@@ -1,17 +1,19 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Sequence
+from typing import NamedTuple, Sequence
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from app.models import Counter, Token, TokenStatus
+from app.config import settings
+from app.models import Counter, Personnel, Token, TokenStatus
 from app.models.user import utcnow
 from app.schemas.counter import CounterOut
 from app.schemas.queue import CounterQueueStatus, QueueSnapshot
 from app.schemas.token import TokenOut
+from app.services.prediction_service import institution_service_rate
 
 NON_TERMINAL_STATUSES = (
     TokenStatus.WAITING,
@@ -20,11 +22,57 @@ NON_TERMINAL_STATUSES = (
 )
 
 
+class Enrichment(NamedTuple):
+    """Per-request lookup tables so decorating many tokens costs O(1) queries."""
+
+    names: dict[int, str]
+    service_rate: float
+
+
+def enrichment_context(db: Session, institution_id: int) -> Enrichment:
+    names = {
+        personnel_id: name
+        for personnel_id, name in db.execute(
+            select(Personnel.id, Personnel.name).where(
+                Personnel.institution_id == institution_id
+            )
+        ).all()
+    }
+    rate = institution_service_rate(db, institution_id)
+    return Enrichment(
+        names=names,
+        service_rate=rate if rate else settings.PREDICT_DEFAULT_SERVICE_MIN,
+    )
+
+
+def decorate(db: Session, institution_id: int, out: TokenOut, ctx: Enrichment | None) -> TokenOut:
+    """Attach computed fields (server name, ETA) to a built token view."""
+    if ctx is None:
+        ctx = enrichment_context(db, institution_id)
+    updates: dict[str, object] = {}
+    if out.served_by_personnel_id is not None:
+        updates["served_by_name"] = ctx.names.get(out.served_by_personnel_id)
+    if out.status == TokenStatus.WAITING and out.position is not None:
+        # Everyone ahead — including the token mid-service — must clear first.
+        updates["eta_min"] = round(max(0, out.position - 1) * ctx.service_rate, 1)
+    return out.model_copy(update=updates) if updates else out
+
+
 def get_owned_token(db: Session, institution_id: int, token_id: int) -> Token:
     token = db.get(Token, token_id)
     if token is None or token.institution_id != institution_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Token not found")
     return token
+
+
+def get_caller_personnel(db: Session, user_id: int, institution_id: int) -> Personnel | None:
+    """The acting account's staff record; admins without one simply stay anonymous."""
+    return db.execute(
+        select(Personnel).where(
+            Personnel.user_id == user_id,
+            Personnel.institution_id == institution_id,
+        )
+    ).scalar_one_or_none()
 
 
 def _require_status(token: Token, *expected: TokenStatus) -> None:
@@ -52,13 +100,23 @@ def token_position(db: Session, token: Token) -> int:
 
 def token_out(db: Session, token: Token) -> TokenOut:
     position = token_position(db, token) if token.status in NON_TERMINAL_STATUSES else None
-    return TokenOut.model_validate(token).model_copy(update={"position": position})
+    out = TokenOut.model_validate(token).model_copy(update={"position": position})
+    return decorate(db, token.institution_id, out, None)
 
 
-def call_token(db: Session, token: Token) -> None:
+def resolve_personnel_link(db: Session, token: Token, user) -> None:
+    """Stamp who claimed the token, when the caller has a staff record."""
+    personnel = get_caller_personnel(db, user.id, user.institution_id)
+    if personnel is not None:
+        token.served_by_personnel_id = personnel.id
+
+
+def call_token(db: Session, token: Token, user=None) -> None:
     _require_status(token, TokenStatus.WAITING)
     token.status = TokenStatus.CALLED
     token.called_at = utcnow()
+    if user is not None:
+        resolve_personnel_link(db, token, user)
     db.commit()
     db.refresh(token)
 
@@ -86,6 +144,15 @@ def mark_no_show(db: Session, token: Token) -> None:
     db.refresh(token)
 
 
+def decline_token(db: Session, token: Token, reason: str) -> None:
+    _require_status(token, TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.IN_SERVICE)
+    token.status = TokenStatus.DECLINED
+    token.decline_reason = reason
+    token.completed_at = utcnow()
+    db.commit()
+    db.refresh(token)
+
+
 def snapshot(
     db: Session,
     institution_id: int,
@@ -106,6 +173,8 @@ def snapshot(
         query = query.where(Counter.id == counter_id)
     counters: Sequence[Counter] = db.execute(query).scalars().all()
 
+    ctx = enrichment_context(db, institution_id)
+
     counter_statuses: list[CounterQueueStatus] = []
     for counter in counters:
         tokens = (
@@ -121,9 +190,8 @@ def snapshot(
         token_outs: list[TokenOut] = []
         for index, token in enumerate(tokens):
             counts[token.status] += 1
-            token_outs.append(
-                TokenOut.model_validate(token).model_copy(update={"position": index + 1})
-            )
+            out = TokenOut.model_validate(token).model_copy(update={"position": index + 1})
+            token_outs.append(decorate(db, institution_id, out, ctx))
         counter_statuses.append(
             CounterQueueStatus(
                 counter=CounterOut.model_validate(counter),

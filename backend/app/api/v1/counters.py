@@ -6,6 +6,7 @@ from app.api.deps import get_current_user, require_roles
 from app.database import get_db
 from app.models import Counter, Token, User
 from app.schemas.counter import CounterCreate, CounterOut, CounterUpdate
+from app.services.broadcast import broadcast_all
 from app.services.queue_service import NON_TERMINAL_STATUSES
 from app.services.token_service import get_owned_counter
 
@@ -29,7 +30,7 @@ def list_counters(
 
 
 @router.post("", response_model=CounterOut, status_code=status.HTTP_201_CREATED)
-def create_counter(
+async def create_counter(
     payload: CounterCreate,
     user: User = Depends(require_roles("admin")),
     db: Session = Depends(get_db),
@@ -42,11 +43,12 @@ def create_counter(
     db.add(counter)
     db.commit()
     db.refresh(counter)
+    await broadcast_all(db, user.institution_id)
     return counter
 
 
 @router.patch("/{counter_id}", response_model=CounterOut)
-def update_counter(
+async def update_counter(
     counter_id: int,
     payload: CounterUpdate,
     user: User = Depends(require_roles("admin")),
@@ -61,11 +63,12 @@ def update_counter(
         counter.is_active = payload.is_active
     db.commit()
     db.refresh(counter)
+    await broadcast_all(db, user.institution_id)
     return counter
 
 
 @router.delete("/{counter_id}", status_code=status.HTTP_204_NO_CONTENT)
-def deactivate_counter(
+async def deactivate_counter(
     counter_id: int,
     user: User = Depends(require_roles("admin")),
     db: Session = Depends(get_db),
@@ -89,10 +92,11 @@ def deactivate_counter(
         )
     counter.is_active = False
     db.commit()
+    await broadcast_all(db, user.institution_id)
 
 
 @router.post("/{counter_id}/activate", response_model=CounterOut)
-def activate_counter(
+async def activate_counter(
     counter_id: int,
     user: User = Depends(require_roles("admin")),
     db: Session = Depends(get_db),
@@ -101,4 +105,5 @@ def activate_counter(
     counter.is_active = True
     db.commit()
     db.refresh(counter)
+    await broadcast_all(db, user.institution_id)
     return counter

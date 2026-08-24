@@ -11,6 +11,10 @@ class TokenCreate(BaseModel):
     customer_phone: str | None = Field(default=None, max_length=32)
 
 
+class DeclineRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=255)
+
+
 class TokenOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -19,11 +23,16 @@ class TokenOut(BaseModel):
     customer_name: str | None
     customer_phone: str | None
     status: TokenStatus
+    decline_reason: str | None = None
+    served_by_personnel_id: int | None = None
     issued_at: datetime
     called_at: datetime | None
     completed_at: datetime | None
     counter_id: int
     position: int | None = None
+    # Computed by the snapshot/queue builders, never read off the ORM row.
+    served_by_name: str | None = None
+    eta_min: float | None = None
 
 
 class TokenPage(BaseModel):

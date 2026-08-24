@@ -10,8 +10,20 @@ class RegisterRequest(BaseModel):
 
 
 class LoginRequest(BaseModel):
+    institution_code: str = Field(min_length=4, max_length=8)
     email: EmailStr
     password: str
+
+
+class InstitutionVerifyRequest(BaseModel):
+    code: str = Field(min_length=4, max_length=8)
+
+
+class InstitutionVerifyResponse(BaseModel):
+    code: str
+    name: str
+    type: str | None = None
+    is_active: bool
 
 
 class RefreshRequest(BaseModel):
@@ -22,6 +34,10 @@ class TokenResponse(BaseModel):
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
+
+
+class RegisterResponse(TokenResponse):
+    institution_code: str
 
 
 class AccessTokenResponse(BaseModel):

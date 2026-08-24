@@ -8,14 +8,18 @@ from app.database import get_db
 from app.models import Institution, User
 from app.schemas.auth import (
     ChangePasswordRequest,
+    InstitutionVerifyRequest,
+    InstitutionVerifyResponse,
     LoginRequest,
     ProfileUpdate,
     RefreshRequest,
     RegisterRequest,
+    RegisterResponse,
     TokenResponse,
 )
 from app.schemas.user import UserOut
-from app.utils.rate_limit import login_limiter
+from app.utils.institution_code import code_for
+from app.utils.rate_limit import institution_verify_limiter, login_limiter
 from app.utils.security import (
     create_access_token,
     create_refresh_token,
@@ -27,8 +31,8 @@ from app.utils.security import (
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-@router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
-def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> TokenResponse:
+@router.post("/register", response_model=RegisterResponse, status_code=status.HTTP_201_CREATED)
+def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> RegisterResponse:
     existing = db.execute(select(User).where(User.email == payload.email)).scalar_one_or_none()
     if existing is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
@@ -43,6 +47,8 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> TokenRe
             status_code=status.HTTP_409_CONFLICT,
             detail="Institution name already registered",
         )
+    # The id only exists after flush; the sequential suffix makes codes unique.
+    institution.code = code_for(institution.id, institution.name)
 
     user = User(
         email=payload.email,
@@ -62,9 +68,38 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> TokenRe
         )
     db.refresh(user)
 
-    access = create_access_token(user.id, user.role, user.institution_id)
-    refresh = create_refresh_token(user.id, user.refresh_token_version)
-    return TokenResponse(access_token=access, refresh_token=refresh)
+    return RegisterResponse(
+        access_token=create_access_token(user.id, user.role, user.institution_id),
+        refresh_token=create_refresh_token(user.id, user.refresh_token_version),
+        institution_code=institution.code,
+    )
+
+
+@router.post("/institution/verify", response_model=InstitutionVerifyResponse)
+def verify_institution(
+    payload: InstitutionVerifyRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> InstitutionVerifyResponse:
+    if not institution_verify_limiter.allow(request.client.host if request.client else "unknown"):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many requests, try again later",
+        )
+    institution = db.execute(
+        select(Institution).where(Institution.code == payload.code.strip().upper())
+    ).scalar_one_or_none()
+    if institution is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No institution found for this ID",
+        )
+    return InstitutionVerifyResponse(
+        code=institution.code,
+        name=institution.name,
+        type=institution.type,
+        is_active=institution.is_active,
+    )
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -78,11 +113,24 @@ def login(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Too many login attempts, try again later",
         )
-    user = db.execute(select(User).where(User.email == payload.email)).scalar_one_or_none()
-    if user is None or not user.is_active or not verify_password(payload.password, user.hashed_password):
+    institution = db.execute(
+        select(Institution).where(Institution.code == payload.institution_code.strip().upper())
+    ).scalar_one_or_none()
+    if institution is None or not institution.is_active:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
+            detail="Institution not found or not accepting sign-ins",
+        )
+    user = db.execute(select(User).where(User.email == payload.email)).scalar_one_or_none()
+    if (
+        user is None
+        or user.institution_id != institution.id
+        or not user.is_active
+        or not verify_password(payload.password, user.hashed_password)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email, password, or institution ID",
         )
     access = create_access_token(user.id, user.role, user.institution_id)
     refresh = create_refresh_token(user.id, user.refresh_token_version)

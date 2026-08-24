@@ -16,6 +16,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuthStore } from "@/store/auth";
+import { homeFor } from "@/lib/navigation";
 
 const FEATURES = [
   {
@@ -77,6 +78,8 @@ const CUSTOMER_STEPS = [
 
 export default function Home() {
   const accessToken = useAuthStore((state) => state.accessToken);
+  const role = useAuthStore((state) => state.user?.role);
+  const home = homeFor(role);
 
   return (
     <div className="flex min-h-svh flex-col">
@@ -95,7 +98,7 @@ export default function Home() {
           </nav>
           <div className="flex items-center gap-2">
             {accessToken ? (
-              <Button size="sm" render={<Link href="/overview" />}>
+              <Button size="sm" render={<Link href={home} />}>
                 <LayoutDashboard />
                 Dashboard
               </Button>
@@ -136,7 +139,7 @@ export default function Home() {
                 <ArrowRight />
               </Button>
               {accessToken ? (
-                <Button size="lg" variant="outline" render={<Link href="/overview" />}>
+                <Button size="lg" variant="outline" render={<Link href={home} />}>
                   <LayoutDashboard />
                   Institution dashboard
                 </Button>

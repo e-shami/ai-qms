@@ -14,11 +14,16 @@ class InstitutionUpdate(BaseModel):
     whatsapp_number: str | None = Field(default=None, max_length=32)
 
 
+class PurgeRequest(BaseModel):
+    confirm_name: str = Field(min_length=1, max_length=255)
+
+
 class InstitutionOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     name: str
+    code: str
     type: str | None
     whatsapp_number: str | None
     is_active: bool

@@ -42,6 +42,9 @@ export const optionalPhone = z
   .optional()
   .or(z.literal(""));
 
+/** Select placeholder value representing "no counter chosen". */
+export const NO_COUNTER = "__none__";
+
 /** yyyy-mm-dd date-input value or empty. */
 const dateString = z
   .string()
@@ -51,7 +54,24 @@ const dateString = z
 
 // --- auth --------------------------------------------------------------------
 
+/** Institution short code: three letters + at least three digits (SHR016). */
+export const INSTITUTION_CODE_REGEX = /^[A-Za-z]{3}\d{3,}$/;
+
+export const institutionCodeField = z
+  .string()
+  .trim()
+  .transform((value) => value.toUpperCase())
+  .refine((value) => INSTITUTION_CODE_REGEX.test(value), {
+    message: "Format: three letters + digits, e.g. SHR016",
+  });
+
+export const verifyInstitutionSchema = z.object({
+  code: institutionCodeField,
+});
+export type VerifyInstitutionValues = z.infer<typeof verifyInstitutionSchema>;
+
 export const loginSchema = z.object({
+  code: institutionCodeField,
   email: emailField,
   password: z.string().min(1, "Password is required"),
 });
@@ -94,6 +114,36 @@ export const staffAccountSchema = z.object({
 });
 export type StaffAccountFormValues = z.infer<typeof staffAccountSchema>;
 
+/** Single-step staff creation: person fields plus their login credentials. */
+export const staffCreateSchema = z.object({
+  name: requiredName(255),
+  title: optionalText(128),
+  counterId: z.union([z.literal(NO_COUNTER), z.string().regex(/^\d+$/, "Pick a counter")]),
+  email: emailField,
+  password: passwordField,
+});
+export type StaffCreateFormValues = z.infer<typeof staffCreateSchema>;
+
+export const resetPasswordSchema = z.object({
+  newPassword: passwordField,
+  confirmPassword: z.string().min(1, "Confirm the new password"),
+}).refine((data) => data.newPassword === data.confirmPassword, {
+  path: ["confirmPassword"],
+  message: "Passwords do not match",
+});
+export type ResetPasswordFormValues = z.infer<typeof resetPasswordSchema>;
+
+// --- decline ------------------------------------------------------------------
+
+export const declineSchema = z.object({
+  reason: z
+    .string()
+    .trim()
+    .min(1, "A reason is required")
+    .max(255, "At most 255 characters"),
+});
+export type DeclineFormValues = z.infer<typeof declineSchema>;
+
 // --- institution ----------------------------------------------------------------
 
 export const institutionSchema = z.object({
@@ -112,8 +162,6 @@ export const counterFormSchema = z.object({
 export type CounterFormValues = z.infer<typeof counterFormSchema>;
 
 // --- personnel -----------------------------------------------------------------------
-
-const NO_COUNTER = "__none__";
 
 export const personnelFormSchema = z.object({
   name: requiredName(255),

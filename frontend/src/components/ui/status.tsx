@@ -11,6 +11,7 @@ export const TOKEN_STATUS_LABELS: Record<TokenStatus, string> = {
   in_service: "In service",
   served: "Served",
   no_show: "No-show",
+  declined: "Declined",
 };
 
 export function TokenStatusBadge({ status }: { status: TokenStatus }) {
@@ -20,6 +21,7 @@ export function TokenStatusBadge({ status }: { status: TokenStatus }) {
     in_service: "outline",
     served: "default",
     no_show: "destructive",
+    declined: "destructive",
   };
   return <Badge variant={variant[status]}>{TOKEN_STATUS_LABELS[status]}</Badge>;
 }

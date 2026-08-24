@@ -8,18 +8,36 @@ import type {
   AuthResponse,
   ProfileUpdate,
   RegisterPayload,
+  RegisterResponse,
   User,
 } from "@/types";
+
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1";
+
+export const LAST_INSTITUTION_KEY = "aiqms-last-institution";
+
+function rememberInstitution(code: string) {
+  try {
+    localStorage.setItem(LAST_INSTITUTION_KEY, code);
+  } catch {
+    // storage unavailable (private mode) — prefill is a nicety, not a need
+  }
+}
 
 interface AuthState {
   accessToken: string | null;
   refreshToken: string | null;
   user: User | null;
-  setSession: (tokens: AuthResponse, user?: User | null) => void;
+  institutionCode: string | null;
+  setSession: (tokens: AuthResponse, user?: User | null, institutionCode?: string | null) => void;
   setUser: (user: User | null) => void;
   clearSession: () => void;
-  login: (email: string, password: string) => Promise<void>;
-  register: (payload: RegisterPayload) => Promise<void>;
+  verifyInstitution: (code: string) => Promise<{ name: string; type: string | null; is_active: boolean }>;
+  login: (institutionCode: string, email: string, password: string) => Promise<void>;
+  register: (
+    payload: RegisterPayload
+  ) => Promise<{ institutionCode: string }>;
   updateProfile: (payload: ProfileUpdate) => Promise<void>;
   changePassword: (
     currentPassword: string,
@@ -29,8 +47,14 @@ interface AuthState {
   logout: () => void;
 }
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1";
+export function lastUsedInstitution(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return localStorage.getItem(LAST_INSTITUTION_KEY);
+  } catch {
+    return null;
+  }
+}
 
 export const useAuthStore = create<AuthState>()(
   persist(
@@ -38,23 +62,41 @@ export const useAuthStore = create<AuthState>()(
       accessToken: null,
       refreshToken: null,
       user: null,
+      institutionCode: null,
 
-      setSession: (tokens, user = null) =>
+      setSession: (tokens, user = null, institutionCode = null) =>
         set({
           accessToken: tokens.access_token,
           refreshToken: tokens.refresh_token,
           user,
+          ...(institutionCode ? { institutionCode } : {}),
         }),
 
       setUser: (user) => set({ user }),
       clearSession: () =>
         set({ accessToken: null, refreshToken: null, user: null }),
 
-      login: async (email, password) => {
+      verifyInstitution: async (code) => {
+        const res = await fetch(`${API_BASE}/auth/institution/verify`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ code }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body.detail ?? "Institution not found");
+        return body as { name: string; type: string | null; is_active: boolean };
+      },
+
+      login: async (institutionCode, email, password) => {
+        const normalized = institutionCode.trim().toUpperCase();
         const res = await fetch(`${API_BASE}/auth/login`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, password }),
+          body: JSON.stringify({
+            institution_code: normalized,
+            email,
+            password,
+          }),
         });
         const body = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(body.detail ?? "Login failed");
@@ -62,7 +104,9 @@ export const useAuthStore = create<AuthState>()(
         set({
           accessToken: tokens.access_token,
           refreshToken: tokens.refresh_token,
+          institutionCode: normalized,
         });
+        rememberInstitution(normalized);
         const me = await fetch(`${API_BASE}/auth/me`, {
           headers: { Authorization: `Bearer ${tokens.access_token}` },
         });
@@ -77,16 +121,19 @@ export const useAuthStore = create<AuthState>()(
         });
         const body = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(body.detail ?? "Registration failed");
-        const tokens = body as AuthResponse;
+        const tokens = body as RegisterResponse;
         set({
           accessToken: tokens.access_token,
           refreshToken: tokens.refresh_token,
+          institutionCode: tokens.institution_code,
         });
+        rememberInstitution(tokens.institution_code);
         // Fetch the profile immediately — role-gated UI depends on it.
         const me = await fetch(`${API_BASE}/auth/me`, {
           headers: { Authorization: `Bearer ${tokens.access_token}` },
         });
         if (me.ok) set({ user: (await me.json()) as User });
+        return { institutionCode: tokens.institution_code };
       },
 
       updateProfile: async (payload) => {
@@ -125,7 +172,6 @@ export const useAuthStore = create<AuthState>()(
           });
           return true;
         } catch {
-          get().clearSession();
           return false;
         }
       },
@@ -140,7 +186,8 @@ export const useAuthStore = create<AuthState>()(
         accessToken: state.accessToken,
         refreshToken: state.refreshToken,
         user: state.user,
+        institutionCode: state.institutionCode,
       }),
-    },
-  ),
+    }
+  )
 );

@@ -1,6 +1,14 @@
 export type Role = "admin" | "staff";
 
-export type TokenStatus = "waiting" | "called" | "in_service" | "served" | "no_show";
+export type WorkStatus = "off_duty" | "available" | "on_break";
+
+export type TokenStatus =
+  | "waiting"
+  | "called"
+  | "in_service"
+  | "served"
+  | "no_show"
+  | "declined";
 
 export interface User {
   id: number;
@@ -15,6 +23,7 @@ export interface User {
 export interface Institution {
   id: number;
   name: string;
+  code: string;
   type: string | null;
   whatsapp_number: string | null;
   is_active: boolean;
@@ -33,6 +42,7 @@ export interface Personnel {
   id: number;
   name: string;
   title: string | null;
+  work_status: WorkStatus;
   counter_id: number | null;
   user_id: number | null;
   is_active: boolean;
@@ -45,11 +55,15 @@ export interface Token {
   customer_name: string | null;
   customer_phone: string | null;
   status: TokenStatus;
+  decline_reason: string | null;
+  served_by_personnel_id: number | null;
   issued_at: string;
   called_at: string | null;
   completed_at: string | null;
   counter_id: number;
   position: number | null;
+  served_by_name: string | null;
+  eta_min: number | null;
 }
 
 export interface TokenPage {
@@ -72,9 +86,23 @@ export interface QueueSnapshot {
   counters: CounterQueueStatus[];
 }
 
+export interface PresenceEntry {
+  personnel_id: number;
+  name: string;
+  title: string | null;
+  work_status: WorkStatus;
+  counter_id: number | null;
+  serving_token_number: string | null;
+  serving_token_status: TokenStatus | null;
+}
+
 export interface AuthResponse {
   access_token: string;
   refresh_token: string;
+}
+
+export interface RegisterResponse extends AuthResponse {
+  institution_code: string;
 }
 
 export interface RegisterPayload {
@@ -89,6 +117,86 @@ export interface ProfileUpdate {
   full_name?: string;
   email?: string;
 }
+
+/** Payloads of the tagged WebSocket frames sent by the backend. */
+export type SocketFrame =
+  | { event: "queue"; data: QueueSnapshot }
+  | { event: "presence"; data: { entries: PresenceEntry[] } };
+
+export interface InstitutionVerify {
+  code: string;
+  name: string;
+  type: string | null;
+  is_active: boolean;
+}
+
+// --- admin overview -----------------------------------------------------------
+
+export interface LiveFunnel {
+  waiting: number;
+  called: number;
+  in_service: number;
+}
+
+export type CounterBoardState = "serving" | "idle" | "closed";
+
+export interface CounterBoardEntry {
+  counter_id: number;
+  counter_name: string;
+  counter_type: string | null;
+  is_active: boolean;
+  status: CounterBoardState;
+  waiting_count: number;
+  current_token_number: string | null;
+  current_token_status: TokenStatus | null;
+  served_by_name: string | null;
+}
+
+export interface TodayTotals {
+  issued: number;
+  served: number;
+  no_shows: number;
+  declined: number;
+  avg_wait_min: number | null;
+}
+
+export interface HourlyPair {
+  hour: number;
+  issued: number;
+  completed: number;
+}
+
+export interface AdminOverview {
+  institution_id: number;
+  updated_at: string;
+  live: LiveFunnel;
+  today: TodayTotals;
+  counters: CounterBoardEntry[];
+  staff: PresenceEntry[];
+  hourly: HourlyPair[];
+}
+
+// --- staff workspace ----------------------------------------------------------
+
+export interface StaffToday {
+  served_by_me: number;
+  no_shows_by_me: number;
+  declined_by_me: number;
+  avg_service_min: number | null;
+}
+
+export interface StaffWorkspace {
+  personnel_id: number;
+  name: string;
+  title: string | null;
+  work_status: WorkStatus;
+  counter: Counter | null;
+  queue: CounterQueueStatus | null;
+  today: StaffToday;
+  updated_at: string;
+}
+
+// --- public -------------------------------------------------------------------
 
 export interface PublicInstitution {
   id: number;
@@ -133,6 +241,7 @@ export interface CounterAnalytics {
   issued: number;
   served: number;
   no_shows: number;
+  declined: number;
   waiting: number;
   avg_wait_min: number | null;
 }
@@ -143,6 +252,7 @@ export interface AnalyticsSummary {
   issued: number;
   served: number;
   no_shows: number;
+  declined: number;
   waiting_now: number;
   in_service_now: number;
   abandonment_rate: number | null;
