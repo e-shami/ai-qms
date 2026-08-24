@@ -253,7 +253,8 @@ function ResetPasswordDialog({
   open,
   onOpenChange,
 }: {
-  member: Personnel;
+  /** Present whenever the dialog is reachable; null while no row is selected. */
+  member: Personnel | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
@@ -269,10 +270,10 @@ function ResetPasswordDialog({
   });
 
   useEffect(() => {
-    if (open) {
+    if (open && member) {
       reset({ newPassword: "", confirmPassword: "" });
     }
-  }, [open, reset]);
+  }, [member, open, reset]);
 
   function handleOpenChange(next: boolean) {
     if (!next) setError(null);
@@ -280,6 +281,7 @@ function ResetPasswordDialog({
   }
 
   async function onSubmit(values: ResetPasswordFormValues) {
+    if (!member) return;
     setError(null);
     try {
       await api.post(`/personnel/${member.id}/reset-password`, {
@@ -298,7 +300,9 @@ function ResetPasswordDialog({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Reset password for {member.name}</DialogTitle>
+          <DialogTitle>
+            {member ? `Reset password for ${member.name}` : "Reset password"}
+          </DialogTitle>
           <DialogDescription>
             Their current sessions are signed out immediately.
           </DialogDescription>
@@ -586,7 +590,7 @@ export function StaffTab() {
       />
 
       <ResetPasswordDialog
-        member={resetMember!}
+        member={resetMember}
         open={resetMember !== null}
         onOpenChange={(next) => {
           if (!next) setResetMember(null);
