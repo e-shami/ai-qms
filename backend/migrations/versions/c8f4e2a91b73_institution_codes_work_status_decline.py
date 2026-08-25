@@ -37,23 +37,31 @@ def _derive_code(institution_id: int, name: str | None) -> str:
         cleaned = "".join(ch for ch in raw.upper() if ch.isascii() and ch.isalnum())
         if cleaned:
             words.append(cleaned)
-    if not words:
-        prefix = "QMS"
-    else:
-        picked = [word[0] for word in words]
-        offsets = [1] * len(words)
-        while len(picked) < 3:
-            progressed = False
-            for index, word in enumerate(words):
-                if offsets[index] < len(word):
-                    picked.append(word[offsets[index]])
-                    offsets[index] += 1
-                    progressed = True
-                    if len(picked) == 3:
-                        break
-            if not progressed:
-                break
-        prefix = "".join(picked[:3]).ljust(3, "X")
+
+    picked: list[str] = []
+    offsets = [0] * len(words)
+    for index, word in enumerate(words):
+        initial = next((ch for ch in word if ch.isalpha()), None)
+        if initial is None:
+            continue
+        picked.append(initial)
+        offsets[index] = 1
+        if len(picked) == 3:
+            break
+
+    while len(picked) < 3:
+        progressed = False
+        for index, word in enumerate(words):
+            if offsets[index] < len(word) and word[offsets[index]].isalpha():
+                picked.append(word[offsets[index]])
+                offsets[index] += 1
+                progressed = True
+                if len(picked) == 3:
+                    break
+        if not progressed:
+            break
+
+    prefix = "".join(picked).ljust(3, "X") if picked else "QMS"
     return f"{prefix}{institution_id:03d}"
 
 

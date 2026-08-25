@@ -47,8 +47,8 @@ import {
   staffCreateSchema,
   type ResetPasswordFormValues,
   type StaffCreateFormValues,
-  type PersonnelFormValues,
 } from "@/lib/validators";
+import type { Resolver } from "react-hook-form";
 import type { Counter, Personnel } from "@/types";
 
 function presenceTone(member: Personnel): StatusTone {
@@ -80,12 +80,12 @@ function StaffFormDialog({
   const [error, setError] = useState<string | null>(null);
 
   const editing = Boolean(member);
-  const createSchema = staffCreateSchema;
-  const editSchema = personnelFormSchema;
-  const schema = editing ? editSchema : createSchema;
-  
-  type FormValues = editing ? PersonnelFormValues : StaffCreateFormValues;
-  
+  // Edit mode validates a subset of the create shape — credentials are
+  // immutable here and their inputs are not rendered, so zod must not
+  // demand them. The form stays typed on the superset; the assertion
+  // marks the single deliberate boundary between the two schemas.
+  const schema = editing ? personnelFormSchema : staffCreateSchema;
+
   const {
     register,
     handleSubmit,
@@ -93,8 +93,11 @@ function StaffFormDialog({
     setValue,
     watch,
     formState: { errors, isSubmitting },
-  } = useForm<FormValues>({
-    resolver: zodResolver(schema),
+  } = useForm<StaffCreateFormValues>({
+    // The schemas' shapes intentionally differ per mode; zod ignores
+    // values outside the active schema, so the narrower edit result is
+    // routed through the superset form type at this one boundary.
+    resolver: zodResolver(schema) as unknown as Resolver<StaffCreateFormValues>,
     defaultValues: {
       name: member?.name ?? "",
       title: member?.title ?? "",
@@ -127,7 +130,7 @@ function StaffFormDialog({
     onOpenChange(next);
   }
 
-  async function onSubmit(values: StaffCreateFormValues | PersonnelFormValues) {
+  async function onSubmit(values: StaffCreateFormValues) {
     setError(null);
     const counter =
       values.counterId === NO_COUNTER_VALUE ? null : Number(values.counterId);
@@ -140,15 +143,14 @@ function StaffFormDialog({
         });
         toast.success(`${values.name} updated`);
       } else {
-        const createValues = values as StaffCreateFormValues;
         await api.post("/personnel", {
-          name: createValues.name,
-          title: createValues.title || null,
+          name: values.name,
+          title: values.title || null,
           counter_id: counter,
-          account_email: createValues.email,
-          account_password: createValues.password,
+          account_email: values.email,
+          account_password: values.password,
         });
-        toast.success(`${createValues.name} added with a login`);
+        toast.success(`${values.name} added with a login`);
       }
       onOpenChange(false);
       onSaved();
@@ -158,9 +160,6 @@ function StaffFormDialog({
       toast.error(message);
     }
   }
-
-  // Editing reuses the same shape minus credential fields.
-  const editSubmit = handleSubmit(onSubmit);
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -173,7 +172,7 @@ function StaffFormDialog({
               : "Creates the person and their sign-in in one step. Share the password securely."}
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={editing ? editSubmit : handleSubmit(onSubmit)} noValidate className="space-y-4">
+        <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-4">
           {error && <Alert variant="destructive">{error}</Alert>}
           <div className="space-y-2">
             <Label htmlFor="staff-name">Name</Label>
@@ -228,7 +227,9 @@ function StaffFormDialog({
                   aria-invalid={!!errors.email}
                   {...register("email")}
                 />
-                {errors.email && <p className="text-xs text-destructive">{errors.email.message}</p>}
+                {errors.email && (
+                  <p className="text-xs text-destructive">{errors.email.message}</p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="staff-password">Password</Label>

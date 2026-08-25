@@ -1,15 +1,18 @@
 """Institution short-code generation.
 
-Format: three uppercase letters derived from the name followed by the
-zero-padded primary key, e.g. id 16 + "Hospital" becomes HOS016.
-Uniqueness comes from the sequential suffix, so name-derived collisions
-are impossible by construction; the UNIQUE constraint on the column is
-a seatbelt, not a requirement.
+Format: three uppercase LETTERS derived from the name followed by the
+zero-padded primary key, e.g. id 16 + "Hospital" becomes HOS016. The
+login screen validates this exact shape, so the prefix is restricted to
+A-Z by construction.
 
-Letter derivation: the initial of each of the first three words. When
-the name has fewer words than that, later letters are drawn from the
-earlier words ("Hospital" -> HOS). Names without any ASCII alphanumerics
-fall back to the QMS prefix.
+Uniqueness comes from the sequential suffix, so name-derived collisions
+are impossible; the UNIQUE constraint on the column is a seatbelt.
+
+Letter derivation: initials of the first three words that contain any
+letter. Words that are purely numeric are skipped entirely ("Ward 5
+Clinic" -> WCL, not W5C). Shorter names keep pulling consecutive
+letters from earlier words ("Hospital" -> HOS). Names without any ASCII
+letters fall back to the QMS prefix.
 """
 
 _CODE_LENGTH = 6
@@ -27,22 +30,31 @@ def _clean_words(name: str) -> list[str]:
     return words
 
 
+def _initial(word: str) -> str | None:
+    return next((ch for ch in word if ch.isalpha()), None)
+
+
 def prefix_from_name(name: str) -> str:
     words = _clean_words(name)
-    if not words:
-        return _FALLBACK_PREFIX
 
-    picked = [word[0] for word in words]
-    if len(picked) >= _PREFIX_LENGTH:
-        return "".join(picked[:_PREFIX_LENGTH])
+    picked: list[str] = []
+    offsets = [0] * len(words)
+    for index, word in enumerate(words):
+        initial = _initial(word)
+        if initial is None:
+            continue
+        picked.append(initial)
+        offsets[index] = 1
+        if len(picked) == _PREFIX_LENGTH:
+            break
 
-    # Short name: keep pulling consecutive letters, rotating through the
-    # words so every word contributes before any word is mined twice deep.
-    offsets = [1] * len(words)
+    # Short or letterless start: keep pulling consecutive letters,
+    # rotating through the words so each contributes before any word is
+    # mined twice deep.
     while len(picked) < _PREFIX_LENGTH:
         progressed = False
         for index, word in enumerate(words):
-            if offsets[index] < len(word):
+            if offsets[index] < len(word) and word[offsets[index]].isalpha():
                 picked.append(word[offsets[index]])
                 offsets[index] += 1
                 progressed = True
@@ -50,6 +62,9 @@ def prefix_from_name(name: str) -> str:
                     break
         if not progressed:
             break
+
+    if not picked:
+        return _FALLBACK_PREFIX
     return "".join(picked).ljust(_PREFIX_LENGTH, _PAD_CHAR)
 
 
