@@ -42,10 +42,12 @@ import { useCounters, usePersonnel } from "@/hooks/use-resources";
 import { api } from "@/lib/api-client";
 import {
   NO_COUNTER_VALUE,
+  personnelFormSchema,
   resetPasswordSchema,
   staffCreateSchema,
   type ResetPasswordFormValues,
   type StaffCreateFormValues,
+  type PersonnelFormValues,
 } from "@/lib/validators";
 import type { Counter, Personnel } from "@/types";
 
@@ -78,7 +80,12 @@ function StaffFormDialog({
   const [error, setError] = useState<string | null>(null);
 
   const editing = Boolean(member);
-  const schema = staffCreateSchema;
+  const createSchema = staffCreateSchema;
+  const editSchema = personnelFormSchema;
+  const schema = editing ? editSchema : createSchema;
+  
+  type FormValues = editing ? PersonnelFormValues : StaffCreateFormValues;
+  
   const {
     register,
     handleSubmit,
@@ -86,7 +93,7 @@ function StaffFormDialog({
     setValue,
     watch,
     formState: { errors, isSubmitting },
-  } = useForm<StaffCreateFormValues>({
+  } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
       name: member?.name ?? "",
@@ -120,7 +127,7 @@ function StaffFormDialog({
     onOpenChange(next);
   }
 
-  async function onSubmit(values: StaffCreateFormValues) {
+  async function onSubmit(values: StaffCreateFormValues | PersonnelFormValues) {
     setError(null);
     const counter =
       values.counterId === NO_COUNTER_VALUE ? null : Number(values.counterId);
@@ -133,14 +140,15 @@ function StaffFormDialog({
         });
         toast.success(`${values.name} updated`);
       } else {
+        const createValues = values as StaffCreateFormValues;
         await api.post("/personnel", {
-          name: values.name,
-          title: values.title || null,
+          name: createValues.name,
+          title: createValues.title || null,
           counter_id: counter,
-          account_email: values.email,
-          account_password: values.password,
+          account_email: createValues.email,
+          account_password: createValues.password,
         });
-        toast.success(`${values.name} added with a login`);
+        toast.success(`${createValues.name} added with a login`);
       }
       onOpenChange(false);
       onSaved();

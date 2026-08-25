@@ -64,7 +64,10 @@ export function CounterSwitcher({
     }
   }
 
-  const activeCounters = counters?.filter((counter) => counter.is_active) ?? [];
+  // Include current counter even if inactive so user can see assignment and switch away
+  const activeCounters = counters
+    ?.filter((counter) => counter.is_active || counter.id === currentCounterId)
+    ?? [];
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -93,6 +96,7 @@ export function CounterSwitcher({
             {activeCounters.map((counter) => {
               const waiting = waitingFor(counter);
               const current = counter.id === currentCounterId;
+              const isInactive = !counter.is_active;
               return (
                 <li
                   key={counter.id}
@@ -107,17 +111,28 @@ export function CounterSwitcher({
                           · {counter.type}
                         </span>
                       )}
+                      {isInactive && (
+                        <span className="ml-2 text-xs text-muted-foreground">(inactive)</span>
+                      )}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {current ? "Your current counter" : waiting != null ? `${waiting} waiting` : "—"}
+                      {current
+                        ? isInactive
+                          ? "Your current counter (inactive — switch to an active counter)"
+                          : "Your current counter"
+                        : waiting != null
+                        ? `${waiting} waiting`
+                        : "—"}
                     </p>
                   </div>
                   {current ? (
-                    <Badge variant="secondary">Current</Badge>
+                    <Badge variant={isInactive ? "destructive" : "secondary"}>
+                      {isInactive ? "Current (inactive)" : "Current"}
+                    </Badge>
                   ) : (
                     <Button
                       size="sm"
-                      disabled={busyId !== null}
+                      disabled={busyId !== null || isInactive}
                       onClick={() => claim(counter)}
                     >
                       {busyId === counter.id ? "Moving…" : "Move here"}

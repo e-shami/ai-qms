@@ -18,7 +18,9 @@ export function useAdminOverview() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const authed = useAuthStore((state) => Boolean(state.accessToken));
+  const accessToken = useAuthStore((state) => state.accessToken);
   const mountedRef = useRef(true);
+  const prevTokenRef = useRef<string | null>(accessToken);
 
   const fetchOverview = useCallback(async () => {
     if (!useAuthStore.getState().accessToken) return;
@@ -38,11 +40,20 @@ export function useAdminOverview() {
     }
   }, []);
 
+  // Reconnect WebSocket when access token changes (e.g., after refresh)
+  useEffect(() => {
+    if (prevTokenRef.current && accessToken && prevTokenRef.current !== accessToken) {
+      queueSocket.forceReconnect();
+    }
+    prevTokenRef.current = accessToken;
+  }, [accessToken]);
+
   useEffect(() => {
     mountedRef.current = true;
     if (!authed) return;
 
     const kickoff = setTimeout(() => void fetchOverview(), 0);
+    queueSocket.connect();
     const unsubscribeQueue = queueSocket.subscribe(() => void fetchOverview());
     const unsubscribePresence = queueSocket.subscribePresence(() => void fetchOverview());
     const poll = setInterval(() => void fetchOverview(), POLL_MS);

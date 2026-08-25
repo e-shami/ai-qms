@@ -97,7 +97,7 @@ export default function WorkspacePage() {
           workspace?.counter
             ? `Serving at ${workspace.counter.name}${
                 workspace.counter.type ? ` — ${workspace.counter.type}` : ""
-              }.`
+              }${workspace.counter.is_active ? "" : " (inactive)"}.`
             : "Claim a counter to start working the queue."
         }
         action={<CounterSwitcher currentCounterId={workspace?.counter?.id ?? null} onChanged={reload} />}

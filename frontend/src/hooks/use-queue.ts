@@ -20,6 +20,7 @@ export function useQueue() {
   const accessToken = useAuthStore((state) => state.accessToken);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const mountedRef = useRef(true);
+  const prevTokenRef = useRef<string | null>(accessToken);
 
   const fetchSnapshot = useCallback(async () => {
     if (!useAuthStore.getState().accessToken) return;
@@ -35,6 +36,14 @@ export function useQueue() {
       if (mountedRef.current) setLoading(false);
     }
   }, []);
+
+  // Reconnect WebSocket when access token changes (e.g., after refresh)
+  useEffect(() => {
+    if (prevTokenRef.current && accessToken && prevTokenRef.current !== accessToken) {
+      queueSocket.forceReconnect();
+    }
+    prevTokenRef.current = accessToken;
+  }, [accessToken]);
 
   useEffect(() => {
     mountedRef.current = true;

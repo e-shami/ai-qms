@@ -7,7 +7,9 @@ const WS_BASE = process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8000/ws";
 type QueueListener = (snapshot: QueueSnapshot) => void;
 type PresenceListener = (entries: PresenceEntry[]) => void;
 type StateListener = (connected: boolean) => void;
-const RECONNECT_MS = 2000;
+const RECONNECT_BASE_MS = 1000;
+const RECONNECT_MAX_MS = 10000;
+const RECONNECT_JITTER_MS = 500;
 
 /** Frames without a tag (older deployments) fall back to the queue handler. */
 function routeFrame(
@@ -33,10 +35,21 @@ class QueueSocket {
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private disposed = false;
   private connectedState = false;
+  private reconnectAttempt = 0;
 
   /** Current link status — lets late subscribers read state, not just changes. */
   isConnected(): boolean {
     return this.connectedState;
+  }
+
+  /** Force a reconnection with the current token (e.g., after manual token refresh). */
+  forceReconnect(): void {
+    if (this.ws) {
+      this.ws.close();
+    } else if (!this.disposed) {
+      this.reconnectAttempt = 0;
+      this.connect();
+    }
   }
 
   connect(): void {
@@ -48,7 +61,10 @@ class QueueSocket {
     const ws = new WebSocket(`${WS_BASE}/queue?token=${token}`);
     this.ws = ws;
 
-    ws.onopen = () => this.emitState(true);
+    ws.onopen = () => {
+      this.reconnectAttempt = 0;
+      this.emitState(true);
+    };
     ws.onmessage = (event) => {
       try {
         routeFrame(JSON.parse(event.data as string), this.dispatchQueue, this.dispatchPresence);
@@ -67,7 +83,13 @@ class QueueSocket {
       const attempt = authRejected ? refreshOnce() : Promise.resolve(true);
       void attempt.finally(() => {
         if (!this.disposed && useAuthStore.getState().accessToken) {
-          this.retryTimer = setTimeout(() => this.connect(), RECONNECT_MS);
+          const delay = Math.min(
+            RECONNECT_BASE_MS * Math.pow(2, this.reconnectAttempt) +
+              Math.random() * RECONNECT_JITTER_MS,
+            RECONNECT_MAX_MS
+          );
+          this.reconnectAttempt++;
+          this.retryTimer = setTimeout(() => this.connect(), delay);
         }
       });
     };

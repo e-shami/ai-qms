@@ -19,25 +19,42 @@ export function useWorkspace() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const authed = useAuthStore((state) => Boolean(state.accessToken));
+  const accessToken = useAuthStore((state) => state.accessToken);
   const mountedRef = useRef(true);
+  const requestIdRef = useRef(0);
+  const prevTokenRef = useRef<string | null>(accessToken);
 
   const fetchWorkspace = useCallback(async () => {
     if (!useAuthStore.getState().accessToken) return;
     const tzOffsetMinutes = -new Date().getTimezoneOffset();
+    const requestId = ++requestIdRef.current;
     try {
       const data = await api.get<StaffWorkspace>(
         `/staff/workspace?tz_offset_minutes=${tzOffsetMinutes}`
       );
-      if (mountedRef.current) {
+      // Ignore stale responses: only update state if this is still the latest request
+      if (mountedRef.current && requestId === requestIdRef.current) {
         setWorkspace(data);
         setError(null);
       }
     } catch (err) {
-      if (mountedRef.current && err instanceof Error) setError(err.message);
+      if (mountedRef.current && requestId === requestIdRef.current && err instanceof Error) {
+        setError(err.message);
+      }
     } finally {
-      if (mountedRef.current) setLoading(false);
+      if (mountedRef.current && requestId === requestIdRef.current) {
+        setLoading(false);
+      }
     }
   }, []);
+
+  // Reconnect WebSocket when access token changes (e.g., after refresh)
+  useEffect(() => {
+    if (prevTokenRef.current && accessToken && prevTokenRef.current !== accessToken) {
+      queueSocket.forceReconnect();
+    }
+    prevTokenRef.current = accessToken;
+  }, [accessToken]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -61,7 +78,13 @@ export function useWorkspace() {
 
   const reload = useCallback(() => {
     setLoading(true);
-    return fetchWorkspace().finally(() => setLoading(false));
+    const requestId = ++requestIdRef.current;
+    return fetchWorkspace().finally(() => {
+      // Only clear loading if this is still the latest request
+      if (requestId === requestIdRef.current) {
+        setLoading(false);
+      }
+    });
   }, [fetchWorkspace]);
 
   return { workspace, presence, loading, error, reload };

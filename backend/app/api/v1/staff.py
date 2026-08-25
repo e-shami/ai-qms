@@ -85,8 +85,6 @@ def workspace(
         counter = db.get(Counter, personnel.counter_id)
         if counter is not None and counter.is_active:
             queue = queue_service.snapshot(db, personnel.institution_id, counter_id=counter.id)
-        else:
-            counter = None
 
     return StaffWorkspace(
         personnel_id=personnel.id,

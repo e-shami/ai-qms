@@ -45,6 +45,15 @@ function fetchShared<T>(path: string): Promise<T> {
   return promise;
 }
 
+function fetchFresh<T>(path: string): Promise<T> {
+  // Bypass inflight cache for forced reloads
+  const promise = api.get<T>(path).finally(() => {
+    // Also clear any stale inflight entry for this path
+    inflight.delete(path);
+  });
+  return promise;
+}
+
 function useResource<T>(path: string, enabled: boolean) {
   // Instant paint: seed from cache synchronously so remounts don't flash skeletons.
   const [entry, setEntry] = useState<{ path: string; data: T } | null>(() => {
@@ -66,7 +75,7 @@ function useResource<T>(path: string, enabled: boolean) {
           return;
         }
       }
-      const pending = force ? fetchShared<T>(path) : Promise.resolve(fetchShared<T>(path));
+      const pending = force ? fetchFresh<T>(path) : fetchShared<T>(path);
       void pending
         .then((data) => {
           if (mountedRef.current) {
