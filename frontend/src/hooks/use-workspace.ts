@@ -30,7 +30,7 @@ export function useWorkspace() {
     const requestId = ++requestIdRef.current;
     try {
       const data = await api.get<StaffWorkspace>(
-        `/staff/workspace?tz_offset_minutes=${tzOffsetMinutes}`
+        `/staff/workspace?tz_offset_minutes=${tzOffsetMinutes}`,
       );
       // Ignore stale responses: only update state if this is still the latest request
       if (mountedRef.current && requestId === requestIdRef.current) {
@@ -38,7 +38,11 @@ export function useWorkspace() {
         setError(null);
       }
     } catch (err) {
-      if (mountedRef.current && requestId === requestIdRef.current && err instanceof Error) {
+      if (
+        mountedRef.current &&
+        requestId === requestIdRef.current &&
+        err instanceof Error
+      ) {
         setError(err.message);
       }
     } finally {
@@ -50,7 +54,11 @@ export function useWorkspace() {
 
   // Reconnect WebSocket when access token changes (e.g., after refresh)
   useEffect(() => {
-    if (prevTokenRef.current && accessToken && prevTokenRef.current !== accessToken) {
+    if (
+      prevTokenRef.current &&
+      accessToken &&
+      prevTokenRef.current !== accessToken
+    ) {
       queueSocket.forceReconnect();
     }
     prevTokenRef.current = accessToken;
@@ -61,9 +69,10 @@ export function useWorkspace() {
     if (!authed) return;
 
     const kickoff = setTimeout(() => void fetchWorkspace(), 0);
+    queueSocket.connect();
     const unsubscribeQueue = queueSocket.subscribe(() => void fetchWorkspace());
     const unsubscribePresence = queueSocket.subscribePresence((entries) =>
-      setPresence(entries)
+      setPresence(entries),
     );
     const poll = setInterval(() => void fetchWorkspace(), POLL_MS);
 

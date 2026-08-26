@@ -15,7 +15,7 @@ const RECONNECT_JITTER_MS = 500;
 function routeFrame(
   raw: unknown,
   onQueue: QueueListener,
-  onPresence: PresenceListener
+  onPresence: PresenceListener,
 ): void {
   const frame = raw as SocketFrame | QueueSnapshot;
   if (frame && typeof frame === "object" && "event" in frame) {
@@ -55,6 +55,10 @@ class QueueSocket {
   connect(): void {
     this.disposed = false;
     if (typeof window === "undefined" || this.ws) return;
+    if (this.retryTimer) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = null;
+    }
     const token = useAuthStore.getState().accessToken;
     if (!token) return;
 
@@ -67,7 +71,11 @@ class QueueSocket {
     };
     ws.onmessage = (event) => {
       try {
-        routeFrame(JSON.parse(event.data as string), this.dispatchQueue, this.dispatchPresence);
+        routeFrame(
+          JSON.parse(event.data as string),
+          this.dispatchQueue,
+          this.dispatchPresence,
+        );
       } catch {
         // ignore malformed frames
       }
@@ -81,12 +89,13 @@ class QueueSocket {
       // spam, and a transient outage must never log the user out.
       const authRejected = event.code === 1008;
       const attempt = authRejected ? refreshOnce() : Promise.resolve(true);
-      void attempt.finally(() => {
+      void attempt.then((refreshed) => {
+        if (!refreshed) return;
         if (!this.disposed && useAuthStore.getState().accessToken) {
           const delay = Math.min(
             RECONNECT_BASE_MS * Math.pow(2, this.reconnectAttempt) +
               Math.random() * RECONNECT_JITTER_MS,
-            RECONNECT_MAX_MS
+            RECONNECT_MAX_MS,
           );
           this.reconnectAttempt++;
           this.retryTimer = setTimeout(() => this.connect(), delay);

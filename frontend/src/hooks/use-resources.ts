@@ -63,6 +63,7 @@ function useResource<T>(path: string, enabled: boolean) {
   });
   const [error, setError] = useState<string | null>(null);
   const mountedRef = useRef(true);
+  const requestIdRef = useRef(0);
 
   const load = useCallback(
     (force: boolean) => {
@@ -75,20 +76,27 @@ function useResource<T>(path: string, enabled: boolean) {
           return;
         }
       }
+      const requestId = ++requestIdRef.current;
       const pending = force ? fetchFresh<T>(path) : fetchShared<T>(path);
       void pending
         .then((data) => {
-          if (mountedRef.current) {
+          if (mountedRef.current && requestId === requestIdRef.current) {
             cacheSet(path, data);
             setEntry({ path, data });
             setError(null);
           }
         })
         .catch((err) => {
-          if (mountedRef.current && err instanceof Error) setError(err.message);
+          if (
+            mountedRef.current &&
+            requestId === requestIdRef.current &&
+            err instanceof Error
+          ) {
+            setError(err.message);
+          }
         });
     },
-    [enabled, path]
+    [enabled, path],
   );
 
   useEffect(() => {
@@ -107,7 +115,10 @@ function useResource<T>(path: string, enabled: boolean) {
   }, [load]);
 
   // Data shown must belong to the current path (filters change paths).
-  const data = entry?.path === path ? entry.data : ((cacheGet(path)?.data as T | undefined) ?? null);
+  const data =
+    entry?.path === path
+      ? entry.data
+      : ((cacheGet(path)?.data as T | undefined) ?? null);
   const loading = enabled && data === null && error === null;
 
   return { data, loading, error, reload };
@@ -131,7 +142,10 @@ export function usePersonnel() {
 
 export function useInstitution() {
   const authed = useAuthed();
-  const { data, ...rest } = useResource<Institution>("/institutions/me", authed);
+  const { data, ...rest } = useResource<Institution>(
+    "/institutions/me",
+    authed,
+  );
   return { institution: data, ...rest };
 }
 

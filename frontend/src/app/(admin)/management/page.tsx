@@ -41,11 +41,17 @@ function ManagementContent() {
 
       <Tabs value={tab} onValueChange={handleTabChange}>
         <TabsList>
-          <TabsTrigger value="staff">
+          <TabsTrigger
+            value="staff"
+            className="data-active:bg-primary data-active:text-primary-foreground"
+          >
             <Users />
             Staff
           </TabsTrigger>
-          <TabsTrigger value="counters">
+          <TabsTrigger
+            value="counters"
+            className="data-active:bg-primary data-active:text-primary-foreground"
+          >
             <ScanLine />
             Counters
           </TabsTrigger>

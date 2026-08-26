@@ -24,7 +24,11 @@ export const passwordField = z
   .max(128, "At most 128 characters");
 
 export const requiredName = (max: number) =>
-  z.string().trim().min(1, "This field is required").max(max, `At most ${max} characters`);
+  z
+    .string()
+    .trim()
+    .min(1, "This field is required")
+    .max(max, `At most ${max} characters`);
 
 export const optionalText = (max: number) =>
   z
@@ -118,19 +122,24 @@ export type StaffAccountFormValues = z.infer<typeof staffAccountSchema>;
 export const staffCreateSchema = z.object({
   name: requiredName(255),
   title: optionalText(128),
-  counterId: z.union([z.literal(NO_COUNTER), z.string().regex(/^\d+$/, "Pick a counter")]),
+  counterId: z.union([
+    z.literal(NO_COUNTER),
+    z.string().regex(/^\d+$/, "Pick a counter"),
+  ]),
   email: emailField,
   password: passwordField,
 });
 export type StaffCreateFormValues = z.infer<typeof staffCreateSchema>;
 
-export const resetPasswordSchema = z.object({
-  newPassword: passwordField,
-  confirmPassword: z.string().min(1, "Confirm the new password"),
-}).refine((data) => data.newPassword === data.confirmPassword, {
-  path: ["confirmPassword"],
-  message: "Passwords do not match",
-});
+export const resetPasswordSchema = z
+  .object({
+    newPassword: passwordField,
+    confirmPassword: z.string().min(1, "Confirm the new password"),
+  })
+  .refine((data) => data.newPassword === data.confirmPassword, {
+    path: ["confirmPassword"],
+    message: "Passwords do not match",
+  });
 export type ResetPasswordFormValues = z.infer<typeof resetPasswordSchema>;
 
 // --- decline ------------------------------------------------------------------
@@ -166,9 +175,16 @@ export type CounterFormValues = z.infer<typeof counterFormSchema>;
 export const personnelFormSchema = z.object({
   name: requiredName(255),
   title: optionalText(128),
-  counterId: z.union([z.literal(NO_COUNTER), z.string().regex(/^\d+$/, "Pick a counter")]),
+  email: emailField.optional().or(z.literal("")),
+  counterId: z.union([
+    z.literal(NO_COUNTER),
+    z.string().regex(/^\d+$/, "Pick a counter"),
+  ]),
 });
 export type PersonnelFormValues = z.infer<typeof personnelFormSchema>;
+export const personnelEditFormSchema = personnelFormSchema.omit({
+  counterId: true,
+});
 export const NO_COUNTER_VALUE = NO_COUNTER;
 
 // --- tokens ------------------------------------------------------------------------------
@@ -208,16 +224,18 @@ export const dateRangeSchema = z
   .refine(
     (data) => {
       if (!data.from || !data.to) return true;
-      return new Date(`${data.from}T00:00:00`) <= new Date(`${data.to}T00:00:00`);
+      return (
+        new Date(`${data.from}T00:00:00`) <= new Date(`${data.to}T00:00:00`)
+      );
     },
-    { path: ["to"], message: "'To' must be on or after 'From'" }
+    { path: ["to"], message: "'To' must be on or after 'From'" },
   );
 export type DateRangeValues = z.infer<typeof dateRangeSchema>;
 
 /** Parse-and-validate dynamic route/query input; null when invalid. */
 export function parseTicketLookup(
   raw: string | undefined,
-  institutionRaw: string | null
+  institutionRaw: string | null,
 ): TicketLookupValues | null {
   const parsed = ticketLookupSchema.safeParse({
     tokenNumber: raw ?? "",

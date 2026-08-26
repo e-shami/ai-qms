@@ -30,6 +30,7 @@ class SetLoginRequest(BaseModel):
 class PersonnelUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     title: str | None = Field(default=None, max_length=128)
+    account_email: EmailStr | None = None
     counter_id: int | None = None
     is_active: bool | None = None
 
@@ -43,5 +44,6 @@ class PersonnelOut(BaseModel):
     work_status: str
     counter_id: int | None
     user_id: int | None
+    account_email: EmailStr | None = None
     is_active: bool
     created_at: datetime

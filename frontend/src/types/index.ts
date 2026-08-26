@@ -45,6 +45,7 @@ export interface Personnel {
   work_status: WorkStatus;
   counter_id: number | null;
   user_id: number | null;
+  account_email: string | null;
   is_active: boolean;
   created_at: string;
 }

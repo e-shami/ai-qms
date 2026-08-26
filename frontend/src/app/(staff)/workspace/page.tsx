@@ -3,7 +3,14 @@
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Ban, CheckCircle2, Clock3, PhoneCall, Play, Radio } from "lucide-react";
+import {
+  Ban,
+  CheckCircle2,
+  Clock3,
+  PhoneCall,
+  Play,
+  Radio,
+} from "lucide-react";
 import toast from "react-hot-toast";
 
 import {
@@ -67,7 +74,10 @@ export default function WorkspacePage() {
   const waitedSeconds = serving
     ? Math.max(
         0,
-        Math.floor((now - new Date(serving.called_at ?? serving.issued_at).getTime()) / 1000)
+        Math.floor(
+          (now - new Date(serving.called_at ?? serving.issued_at).getTime()) /
+            1000,
+        ),
       )
     : null;
 
@@ -75,7 +85,7 @@ export default function WorkspacePage() {
     token: Token,
     action: string,
     successMessage: string,
-    body?: unknown
+    body?: unknown,
   ) {
     setBusyAction(`${token.id}:${action}`);
     try {
@@ -100,7 +110,12 @@ export default function WorkspacePage() {
               }${workspace.counter.is_active ? "" : " (inactive)"}.`
             : "Claim a counter to start working the queue."
         }
-        action={<CounterSwitcher currentCounterId={workspace?.counter?.id ?? null} onChanged={reload} />}
+        action={
+          <CounterSwitcher
+            currentCounterId={workspace?.counter?.id ?? null}
+            onChanged={reload}
+          />
+        }
       />
 
       {error && <Alert variant="destructive">{error}</Alert>}
@@ -112,10 +127,15 @@ export default function WorkspacePage() {
             <p className="text-sm font-medium">
               {workspace?.name ?? "…"}
               {workspace?.title && (
-                <span className="font-normal text-muted-foreground"> · {workspace.title}</span>
+                <span className="font-normal text-muted-foreground">
+                  {" "}
+                  · {workspace.title}
+                </span>
               )}
             </p>
-            <p className="text-xs text-muted-foreground">Your declared status</p>
+            <p className="text-xs text-muted-foreground">
+              Your declared status
+            </p>
           </div>
           {workspace && (
             <PresenceControl value={workspace.work_status} onChanged={reload} />
@@ -133,10 +153,7 @@ export default function WorkspacePage() {
                 No counter claimed yet — pick one to see your live queue.
               </p>
             </div>
-            <CounterSwitcher
-              currentCounterId={null}
-              onChanged={reload}
-            />
+            <CounterSwitcher currentCounterId={null} onChanged={reload} />
           </CardContent>
         </Card>
       )}
@@ -145,9 +162,14 @@ export default function WorkspacePage() {
       {loading && !workspace ? (
         <Skeleton className="h-48" />
       ) : workspace?.queue && serving ? (
-        <section aria-label="Now serving" className="rounded-xl border bg-card p-6 text-center shadow-sm sm:p-8">
+        <section
+          aria-label="Now serving"
+          className="rounded-xl border bg-card p-6 text-center shadow-sm sm:p-8"
+        >
           <p className="text-xs uppercase tracking-wide text-muted-foreground">
-            {serving.status === "called" ? "Called — waiting for customer" : "In service"}
+            {serving.status === "called"
+              ? "Called — waiting for customer"
+              : "In service"}
           </p>
           <p className="mt-2 font-mono text-5xl font-semibold tabular-nums tracking-tight sm:text-7xl">
             {serving.token_number}
@@ -167,7 +189,11 @@ export default function WorkspacePage() {
             {serving.status === "called" && (
               <Button
                 onClick={() =>
-                  runTokenAction(serving, "start", `${serving.token_number} started`)
+                  runTokenAction(
+                    serving,
+                    "start",
+                    `${serving.token_number} started`,
+                  )
                 }
                 disabled={busyAction !== null}
               >
@@ -181,7 +207,7 @@ export default function WorkspacePage() {
                   runTokenAction(
                     serving,
                     "complete",
-                    `${serving.token_number} completed`
+                    `${serving.token_number} completed`,
                   )
                 }
                 disabled={busyAction !== null}
@@ -203,7 +229,11 @@ export default function WorkspacePage() {
                 variant="ghost"
                 disabled={busyAction !== null}
                 onClick={() =>
-                  runTokenAction(serving, "no-show", `${serving.token_number} marked no-show`)
+                  runTokenAction(
+                    serving,
+                    "no-show",
+                    `${serving.token_number} marked no-show`,
+                  )
                 }
               >
                 No-show
@@ -259,9 +289,15 @@ export default function WorkspacePage() {
                     )}
                     <Button
                       size="xs"
-                      disabled={busyAction !== null || serving?.status === "in_service"}
+                      disabled={
+                        busyAction !== null || serving?.status === "in_service"
+                      }
                       onClick={() =>
-                        runTokenAction(token, "call", `${token.token_number} called`)
+                        runTokenAction(
+                          token,
+                          "call",
+                          `${token.token_number} called`,
+                        )
                       }
                     >
                       <PhoneCall />
@@ -277,8 +313,18 @@ export default function WorkspacePage() {
 
       {/* Today */}
       <div className="grid gap-4 sm:grid-cols-3">
-        <StatCard label="Served by me" value={workspace?.today.served_by_me} icon={CheckCircle2} loading={loading && !workspace} />
-        <StatCard label="No-shows by me" value={workspace?.today.no_shows_by_me} icon={Ban} loading={loading && !workspace} />
+        <StatCard
+          label="Served by me"
+          value={workspace?.today.served_by_me}
+          icon={CheckCircle2}
+          loading={loading && !workspace}
+        />
+        <StatCard
+          label="No-shows by me"
+          value={workspace?.today.no_shows_by_me}
+          icon={Ban}
+          loading={loading && !workspace}
+        />
         <StatCard
           label="Avg service time"
           value={
@@ -305,7 +351,7 @@ export default function WorkspacePage() {
             declineTarget,
             "decline",
             `${declineTarget.token_number} declined`,
-            { reason }
+            { reason },
           );
         }}
       />
@@ -322,7 +368,13 @@ interface DeclineDialogProps {
   onConfirm: (reason: string) => Promise<void>;
 }
 
-function DeclineDialog({ token, open, busy, onOpenChange, onConfirm }: DeclineDialogProps) {
+function DeclineDialog({
+  token,
+  open,
+  busy,
+  onOpenChange,
+  onConfirm,
+}: DeclineDialogProps) {
   const {
     register,
     handleSubmit,
@@ -342,7 +394,7 @@ function DeclineDialog({ token, open, busy, onOpenChange, onConfirm }: DeclineDi
     await onConfirm(
       values.reason === ""
         ? `${token?.token_number ?? "Token"} declined`
-        : `${token?.token_number ?? "Token"} declined — ${values.reason}`
+        : `${token?.token_number ?? "Token"} declined — ${values.reason}`,
     );
     reset({ reason: "" });
   }
@@ -353,10 +405,15 @@ function DeclineDialog({ token, open, busy, onOpenChange, onConfirm }: DeclineDi
         <DialogHeader>
           <DialogTitle>Decline {token?.token_number}</DialogTitle>
           <DialogDescription>
-            The customer is told their token was closed without service. A reason is required.
+            The customer is told their token was closed without service. A
+            reason is required.
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-4">
+        <form
+          onSubmit={handleSubmit(onSubmit)}
+          noValidate
+          className="space-y-4"
+        >
           <div className="space-y-2">
             <Label htmlFor="decline-reason">Reason</Label>
             <Textarea
@@ -367,11 +424,17 @@ function DeclineDialog({ token, open, busy, onOpenChange, onConfirm }: DeclineDi
               {...register("reason")}
             />
             {errors.reason && (
-              <p className="text-xs text-destructive">{errors.reason.message}</p>
+              <p className="text-xs text-destructive">
+                {errors.reason.message}
+              </p>
             )}
           </div>
           <DialogFooter showCloseButton>
-            <Button type="submit" variant="destructive" disabled={busy || isSubmitting}>
+            <Button
+              type="submit"
+              variant="destructive"
+              disabled={busy || isSubmitting}
+            >
               {isSubmitting ? "Declining…" : "Decline token"}
             </Button>
           </DialogFooter>

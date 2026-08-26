@@ -3,7 +3,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { KeyRound, Plus, Search, ShieldOff, ShieldCheck } from "lucide-react";
+import {
+  ArrowLeftRight,
+  KeyRound,
+  Plus,
+  Search,
+  ShieldOff,
+  ShieldCheck,
+} from "lucide-react";
 import toast from "react-hot-toast";
 
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
@@ -40,16 +47,17 @@ import { StatusDot } from "@/components/ui/status-dot";
 import type { StatusTone } from "@/components/ui/status-dot";
 import { useCounters, usePersonnel } from "@/hooks/use-resources";
 import { api } from "@/lib/api-client";
+import { queueSocket } from "@/lib/socket";
 import {
   NO_COUNTER_VALUE,
-  personnelFormSchema,
+  personnelEditFormSchema,
   resetPasswordSchema,
   staffCreateSchema,
   type ResetPasswordFormValues,
   type StaffCreateFormValues,
 } from "@/lib/validators";
 import type { Resolver } from "react-hook-form";
-import type { Counter, Personnel } from "@/types";
+import type { Counter, Personnel, PresenceEntry } from "@/types";
 
 function presenceTone(member: Personnel): StatusTone {
   if (member.work_status === "available") return "idle";
@@ -84,7 +92,7 @@ function StaffFormDialog({
   // immutable here and their inputs are not rendered, so zod must not
   // demand them. The form stays typed on the superset; the assertion
   // marks the single deliberate boundary between the two schemas.
-  const schema = editing ? personnelFormSchema : staffCreateSchema;
+  const schema = editing ? personnelEditFormSchema : staffCreateSchema;
 
   const {
     register,
@@ -101,8 +109,7 @@ function StaffFormDialog({
     defaultValues: {
       name: member?.name ?? "",
       title: member?.title ?? "",
-      counterId:
-        member?.counter_id != null ? String(member.counter_id) : NO_COUNTER_VALUE,
+      counterId: NO_COUNTER_VALUE,
       email: "",
       password: "",
     },
@@ -117,9 +124,7 @@ function StaffFormDialog({
       reset({
         name: member?.name ?? "",
         title: member?.title ?? "",
-        counterId:
-          member?.counter_id != null ? String(member.counter_id) : NO_COUNTER_VALUE,
-        email: "",
+        email: member?.account_email ?? "",
         password: "",
       });
     }
@@ -139,7 +144,9 @@ function StaffFormDialog({
         await api.patch(`/personnel/${member.id}`, {
           name: values.name,
           title: values.title || null,
-          counter_id: counter,
+          ...(member.user_id != null && values.email
+            ? { account_email: values.email }
+            : {}),
         });
         toast.success(`${values.name} updated`);
       } else {
@@ -165,19 +172,31 @@ function StaffFormDialog({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{editing ? `Edit ${member?.name}` : "Add staff member"}</DialogTitle>
+          <DialogTitle>
+            {editing ? `Edit ${member?.name}` : "Add staff member"}
+          </DialogTitle>
           <DialogDescription>
             {editing
-              ? "Update details or move this person to another counter."
+              ? "Update this staff member’s name, title, or sign-in email."
               : "Creates the person and their sign-in in one step. Share the password securely."}
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-4">
+        <form
+          onSubmit={handleSubmit(onSubmit)}
+          noValidate
+          className="space-y-4"
+        >
           {error && <Alert variant="destructive">{error}</Alert>}
           <div className="space-y-2">
             <Label htmlFor="staff-name">Name</Label>
-            <Input id="staff-name" aria-invalid={!!errors.name} {...register("name")} />
-            {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
+            <Input
+              id="staff-name"
+              aria-invalid={!!errors.name}
+              {...register("name")}
+            />
+            {errors.name && (
+              <p className="text-xs text-destructive">{errors.name.message}</p>
+            )}
           </div>
           <div className="space-y-2">
             <Label htmlFor="staff-title">Title (optional)</Label>
@@ -187,34 +206,69 @@ function StaffFormDialog({
               aria-invalid={!!errors.title}
               {...register("title")}
             />
-            {errors.title && <p className="text-xs text-destructive">{errors.title.message}</p>}
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="staff-counter">Counter</Label>
-            <Select
-              value={counterId}
-              onValueChange={(value) =>
-                setValue("counterId", value ?? NO_COUNTER_VALUE, { shouldValidate: true })
-              }
-            >
-              <SelectTrigger className="w-full" aria-invalid={!!errors.counterId}>
-                <SelectValue placeholder="No counter assigned" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NO_COUNTER_VALUE} label="No counter assigned">
-                  No counter assigned
-                </SelectItem>
-                {counters.map((counter) => (
-                  <SelectItem key={counter.id} value={String(counter.id)} label={counter.name}>
-                    {counter.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {errors.counterId && (
-              <p className="text-xs text-destructive">{errors.counterId.message}</p>
+            {errors.title && (
+              <p className="text-xs text-destructive">{errors.title.message}</p>
             )}
           </div>
+          {!editing && (
+            <div className="space-y-2">
+              <Label htmlFor="staff-counter">Initial counter</Label>
+              <Select
+                value={counterId}
+                onValueChange={(value) =>
+                  setValue("counterId", value ?? NO_COUNTER_VALUE, {
+                    shouldValidate: true,
+                  })
+                }
+              >
+                <SelectTrigger
+                  className="w-full"
+                  aria-invalid={!!errors.counterId}
+                >
+                  <SelectValue placeholder="No counter assigned" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem
+                    value={NO_COUNTER_VALUE}
+                    label="No counter assigned"
+                  >
+                    No counter assigned
+                  </SelectItem>
+                  {counters.map((counter) => (
+                    <SelectItem
+                      key={counter.id}
+                      value={String(counter.id)}
+                      label={counter.name}
+                    >
+                      {counter.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {errors.counterId && (
+                <p className="text-xs text-destructive">
+                  {errors.counterId.message}
+                </p>
+              )}
+            </div>
+          )}
+          {editing && member?.user_id != null && (
+            <div className="space-y-2">
+              <Label htmlFor="staff-email">Sign-in email</Label>
+              <Input
+                id="staff-email"
+                type="email"
+                autoComplete="off"
+                aria-invalid={!!errors.email}
+                {...register("email")}
+              />
+              {errors.email && (
+                <p className="text-xs text-destructive">
+                  {errors.email.message}
+                </p>
+              )}
+            </div>
+          )}
           {!editing && (
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
@@ -228,7 +282,9 @@ function StaffFormDialog({
                   {...register("email")}
                 />
                 {errors.email && (
-                  <p className="text-xs text-destructive">{errors.email.message}</p>
+                  <p className="text-xs text-destructive">
+                    {errors.email.message}
+                  </p>
                 )}
               </div>
               <div className="space-y-2">
@@ -241,7 +297,9 @@ function StaffFormDialog({
                   {...register("password")}
                 />
                 {errors.password && (
-                  <p className="text-xs text-destructive">{errors.password.message}</p>
+                  <p className="text-xs text-destructive">
+                    {errors.password.message}
+                  </p>
                 )}
               </div>
             </div>
@@ -252,6 +310,91 @@ function StaffFormDialog({
             </Button>
           </DialogFooter>
         </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function CounterAssignmentDialog({
+  member,
+  counters,
+  open,
+  onOpenChange,
+  onChanged,
+}: {
+  member: Personnel | null;
+  counters: Counter[];
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onChanged: () => void;
+}) {
+  const [counterId, setCounterId] = useState(
+    member?.counter_id == null ? NO_COUNTER_VALUE : String(member.counter_id),
+  );
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    if (!member) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await api.patch(`/personnel/${member.id}/counter`, {
+        counter_id: counterId === NO_COUNTER_VALUE ? null : Number(counterId),
+      });
+      toast.success(`${member.name}'s counter updated`);
+      onOpenChange(false);
+      onChanged();
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Counter update failed";
+      setError(message);
+      toast.error(message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Change counter for {member?.name}</DialogTitle>
+          <DialogDescription>
+            Choose a free active counter or remove the current assignment.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          {error && <Alert variant="destructive">{error}</Alert>}
+          <div className="space-y-2">
+            <Label htmlFor="assignment-counter">Counter</Label>
+            <Select
+              value={counterId}
+              onValueChange={(value) => setCounterId(value ?? NO_COUNTER_VALUE)}
+            >
+              <SelectTrigger id="assignment-counter" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NO_COUNTER_VALUE}>
+                  No counter assigned
+                </SelectItem>
+                {counters
+                  .filter((counter) => counter.is_active)
+                  .map((counter) => (
+                    <SelectItem key={counter.id} value={String(counter.id)}>
+                      {counter.name}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter showCloseButton>
+            <Button disabled={saving} onClick={save}>
+              {saving ? "Saving…" : "Save counter"}
+            </Button>
+          </DialogFooter>
+        </div>
       </DialogContent>
     </Dialog>
   );
@@ -316,7 +459,11 @@ function ResetPasswordDialog({
             Their current sessions are signed out immediately.
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-4">
+        <form
+          onSubmit={handleSubmit(onSubmit)}
+          noValidate
+          className="space-y-4"
+        >
           {error && <Alert variant="destructive">{error}</Alert>}
           <div className="space-y-2">
             <Label htmlFor="reset-new">New password</Label>
@@ -328,7 +475,9 @@ function ResetPasswordDialog({
               {...register("newPassword")}
             />
             {errors.newPassword && (
-              <p className="text-xs text-destructive">{errors.newPassword.message}</p>
+              <p className="text-xs text-destructive">
+                {errors.newPassword.message}
+              </p>
             )}
           </div>
           <div className="space-y-2">
@@ -341,7 +490,9 @@ function ResetPasswordDialog({
               {...register("confirmPassword")}
             />
             {errors.confirmPassword && (
-              <p className="text-xs text-destructive">{errors.confirmPassword.message}</p>
+              <p className="text-xs text-destructive">
+                {errors.confirmPassword.message}
+              </p>
             )}
           </div>
           <DialogFooter showCloseButton>
@@ -358,32 +509,63 @@ function ResetPasswordDialog({
 export function StaffTab() {
   const { personnel, loading, error, reload } = usePersonnel();
   const { counters } = useCounters();
+  const [livePresence, setLivePresence] = useState<
+    Record<number, PresenceEntry>
+  >({});
   const [query, setQuery] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [editMember, setEditMember] = useState<Personnel | null>(null);
+  const [counterMember, setCounterMember] = useState<Personnel | null>(null);
   const [resetMember, setResetMember] = useState<Personnel | null>(null);
-  const [deactivateTarget, setDeactivateTarget] = useState<Personnel | null>(null);
+  const [deactivateTarget, setDeactivateTarget] = useState<Personnel | null>(
+    null,
+  );
   // Login-enabled state lives on the linked User row, which the personnel
   // payload does not expose — tracked here from the moment an admin toggles it.
-  const [blockedLogins, setBlockedLogins] = useState<Record<number, boolean>>({});
+  const [blockedLogins, setBlockedLogins] = useState<Record<number, boolean>>(
+    {},
+  );
+
+  useEffect(() => {
+    queueSocket.connect();
+    return queueSocket.subscribePresence((entries) => {
+      setLivePresence(
+        Object.fromEntries(entries.map((entry) => [entry.personnel_id, entry])),
+      );
+    });
+  }, []);
 
   function markLoginBlocked(memberId: number, blocked: boolean) {
     setBlockedLogins((prev) => ({ ...prev, [memberId]: blocked }));
   }
 
-  const filtered = useMemo(() => {
+  const livePersonnel = useMemo(() => {
     if (!personnel) return null;
+    return personnel.map((member) => {
+      const live = livePresence[member.id];
+      return live
+        ? {
+            ...member,
+            work_status: live.work_status,
+            counter_id: live.counter_id,
+          }
+        : member;
+    });
+  }, [livePresence, personnel]);
+
+  const filtered = useMemo(() => {
+    if (!livePersonnel) return null;
     const needle = query.trim().toLowerCase();
-    if (!needle) return personnel;
-    return personnel.filter(
+    if (!needle) return livePersonnel;
+    return livePersonnel.filter(
       (member) =>
         member.name.toLowerCase().includes(needle) ||
-        (member.title ?? "").toLowerCase().includes(needle)
+        (member.title ?? "").toLowerCase().includes(needle),
     );
-  }, [personnel, query]);
+  }, [livePersonnel, query]);
 
   const counterName = (id: number | null) =>
-    id == null ? "—" : counters?.find((c) => c.id === id)?.name ?? `#${id}`;
+    id == null ? "—" : (counters?.find((c) => c.id === id)?.name ?? `#${id}`);
 
   async function toggleActive(member: Personnel) {
     const action = member.is_active
@@ -391,7 +573,11 @@ export function StaffTab() {
       : () => api.post(`/personnel/${member.id}/activate`);
     try {
       await action();
-      toast.success(member.is_active ? `${member.name} deactivated` : `${member.name} activated`);
+      toast.success(
+        member.is_active
+          ? `${member.name} deactivated`
+          : `${member.name} activated`,
+      );
       setDeactivateTarget(null);
       reload();
     } catch (err) {
@@ -431,7 +617,9 @@ export function StaffTab() {
         <EmptyState
           title={query ? "No matches" : "No staff members yet"}
           description={
-            query ? "Try a different search." : "Add your first staff member to get started."
+            query
+              ? "Try a different search."
+              : "Add your first staff member to get started."
           }
         />
       ) : (
@@ -454,7 +642,9 @@ export function StaffTab() {
                     <TableCell>
                       <p className="font-medium">{member.name}</p>
                       {member.title && (
-                        <p className="text-xs text-muted-foreground">{member.title}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {member.title}
+                        </p>
                       )}
                     </TableCell>
                     <TableCell className="text-muted-foreground">
@@ -490,6 +680,14 @@ export function StaffTab() {
                         >
                           Edit
                         </Button>
+                        <Button
+                          size="xs"
+                          variant="outline"
+                          onClick={() => setCounterMember(member)}
+                        >
+                          <ArrowLeftRight />
+                          Counter
+                        </Button>
                         {member.user_id != null && member.is_active && (
                           <>
                             <Button
@@ -498,12 +696,14 @@ export function StaffTab() {
                               onClick={() => setResetMember(member)}
                             >
                               <KeyRound />
-                              Password
+                              Change password
                             </Button>
                             <DisableLoginButton
                               member={member}
                               blocked={Boolean(blockedLogins[member.id])}
-                              onToggled={(blocked) => markLoginBlocked(member.id, blocked)}
+                              onToggled={(blocked) =>
+                                markLoginBlocked(member.id, blocked)
+                              }
                               onDone={reload}
                             />
                           </>
@@ -517,7 +717,10 @@ export function StaffTab() {
                             Deactivate
                           </Button>
                         ) : (
-                          <Button size="xs" onClick={() => toggleActive(member)}>
+                          <Button
+                            size="xs"
+                            onClick={() => toggleActive(member)}
+                          >
                             Activate
                           </Button>
                         )}
@@ -537,7 +740,9 @@ export function StaffTab() {
                   <div className="min-w-0">
                     <p className="truncate font-medium">{member.name}</p>
                     <p className="truncate text-xs text-muted-foreground">
-                      {[member.title, counterName(member.counter_id)].filter(Boolean).join(" · ")}
+                      {[member.title, counterName(member.counter_id)]
+                        .filter(Boolean)
+                        .join(" · ")}
                     </p>
                   </div>
                   {member.is_active ? (
@@ -550,19 +755,37 @@ export function StaffTab() {
                   )}
                 </div>
                 <div className="flex flex-wrap gap-1.5">
-                  <Button size="xs" variant="outline" onClick={() => setEditMember(member)}>
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    onClick={() => setEditMember(member)}
+                  >
                     Edit
+                  </Button>
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    onClick={() => setCounterMember(member)}
+                  >
+                    <ArrowLeftRight />
+                    Counter
                   </Button>
                   {member.user_id != null && member.is_active && (
                     <>
-                      <Button size="xs" variant="outline" onClick={() => setResetMember(member)}>
+                      <Button
+                        size="xs"
+                        variant="outline"
+                        onClick={() => setResetMember(member)}
+                      >
                         <KeyRound />
-                        Password
+                        Change password
                       </Button>
                       <DisableLoginButton
                         member={member}
                         blocked={Boolean(blockedLogins[member.id])}
-                        onToggled={(blocked) => markLoginBlocked(member.id, blocked)}
+                        onToggled={(blocked) =>
+                          markLoginBlocked(member.id, blocked)
+                        }
                         onDone={reload}
                       />
                     </>
@@ -606,6 +829,17 @@ export function StaffTab() {
         }}
       />
 
+      <CounterAssignmentDialog
+        key={`${counterMember?.id ?? "none"}:${counterMember !== null}`}
+        member={counterMember}
+        counters={counters ?? []}
+        open={counterMember !== null}
+        onOpenChange={(next) => {
+          if (!next) setCounterMember(null);
+        }}
+        onChanged={reload}
+      />
+
       <ConfirmDialog
         open={deactivateTarget !== null}
         onOpenChange={(next) => {
@@ -644,7 +878,11 @@ function DisableLoginButton({
     try {
       await api.post(`/personnel/${member.id}/set-login`, { enabled: blocked });
       onToggled(!blocked);
-      toast.success(blocked ? `Login enabled for ${member.name}` : `Login disabled for ${member.name}`);
+      toast.success(
+        blocked
+          ? `Login enabled for ${member.name}`
+          : `Login disabled for ${member.name}`,
+      );
       onDone();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Toggle failed";
