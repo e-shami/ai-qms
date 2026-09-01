@@ -1,6 +1,6 @@
 import { refreshOnce } from "@/lib/api-client";
 import { useAuthStore } from "@/store/auth";
-import type { PresenceEntry, QueueSnapshot, SocketFrame } from "@/types";
+import type { PresenceEntry, QueueSnapshot, SocketFrame, CVQueueUpdate } from "@/types";
 
 const WS_BASE = process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8000/ws";
 
@@ -16,11 +16,13 @@ function routeFrame(
   raw: unknown,
   onQueue: QueueListener,
   onPresence: PresenceListener,
+  onCVUpdate: (data: CVQueueUpdate) => void,
 ): void {
   const frame = raw as SocketFrame | QueueSnapshot;
   if (frame && typeof frame === "object" && "event" in frame) {
     if (frame.event === "queue") onQueue(frame.data);
     if (frame.event === "presence") onPresence(frame.data.entries);
+    if (frame.event === "cv_update") onCVUpdate(frame.data);
     return;
   }
   const snapshot = frame as QueueSnapshot;
@@ -31,6 +33,7 @@ class QueueSocket {
   private ws: WebSocket | null = null;
   private queueListeners = new Set<QueueListener>();
   private presenceListeners = new Set<PresenceListener>();
+  private cvUpdateListeners = new Set<(data: CVQueueUpdate) => void>();
   private stateListeners = new Set<StateListener>();
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private disposed = false;
@@ -75,6 +78,7 @@ class QueueSocket {
           JSON.parse(event.data as string),
           this.dispatchQueue,
           this.dispatchPresence,
+          this.dispatchCVUpdate,
         );
       } catch {
         // ignore malformed frames
@@ -119,6 +123,13 @@ class QueueSocket {
     };
   }
 
+  subscribeCVUpdate(listener: (data: CVQueueUpdate) => void): () => void {
+    this.cvUpdateListeners.add(listener);
+    return () => {
+      this.cvUpdateListeners.delete(listener);
+    };
+  }
+
   subscribeState(listener: StateListener): () => void {
     this.stateListeners.add(listener);
     return () => {
@@ -140,6 +151,10 @@ class QueueSocket {
 
   private dispatchPresence = (entries: PresenceEntry[]) => {
     this.presenceListeners.forEach((listener) => listener(entries));
+  };
+
+  private dispatchCVUpdate = (data: CVQueueUpdate) => {
+    this.cvUpdateListeners.forEach((listener) => listener(data));
   };
 
   private emitState(connected: boolean): void {

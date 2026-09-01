@@ -5,6 +5,7 @@ from app.api.v1 import (
     analytics,
     auth,
     counters,
+    cv,
     institutions,
     overview,
     personnel,
@@ -32,6 +33,7 @@ API_PREFIX = "/api/v1"
 app.include_router(auth.router, prefix=API_PREFIX)
 app.include_router(institutions.router, prefix=API_PREFIX)
 app.include_router(counters.router, prefix=API_PREFIX)
+app.include_router(cv.router, prefix=API_PREFIX)
 app.include_router(personnel.router, prefix=API_PREFIX)
 app.include_router(tokens.router, prefix=API_PREFIX)
 app.include_router(queue.router, prefix=API_PREFIX)
