@@ -147,14 +147,14 @@ export function CountersTab() {
     if (cvUpdate && cvUpdate.counter_id === id) {
       return cvUpdate.queue_length;
     }
-    return counters.find((c) => c.id === id)?.cv_queue_length ?? null;
+    return counters?.find((c) => c.id === id)?.cv_queue_length ?? null;
   };
 
   const cvServiceRateFor = (id: number) => {
     if (cvUpdate && cvUpdate.counter_id === id) {
       return cvUpdate.service_rate;
     }
-    return counters.find((c) => c.id === id)?.cv_service_rate ?? null;
+    return counters?.find((c) => c.id === id)?.cv_service_rate ?? null;
   };
 
   async function toggleActive(counter: Counter) {
