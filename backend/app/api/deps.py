@@ -1,5 +1,5 @@
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Header
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Personnel, User
 from app.utils.security import decode_token
+from app.config import settings
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -80,3 +81,15 @@ def get_current_personnel(
             detail="No active staff record is linked to this account",
         )
     return personnel
+
+
+def verify_internal_api_key(
+    x_internal_api_key: str = Header(..., alias="X-Internal-API-Key"),
+) -> str:
+    """Verify internal API key for service-to-service communication."""
+    if x_internal_api_key != settings.INTERNAL_API_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid internal API key",
+        )
+    return x_internal_api_key

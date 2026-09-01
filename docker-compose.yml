@@ -68,5 +68,36 @@ services:
     depends_on:
       - backend
 
+  cv-service:
+    build: ./cv-service
+    restart: unless-stopped
+    environment:
+      CAMERA_SOURCE: ${CAMERA_SOURCE:-0}
+      CAMERA_WIDTH: ${CAMERA_WIDTH:-640}
+      CAMERA_HEIGHT: ${CAMERA_HEIGHT:-480}
+      CAMERA_FPS: ${CAMERA_FPS:-15}
+      YOLO_MODEL: ${YOLO_MODEL:-yolov8n.pt}
+      YOLO_CONF_THRESHOLD: ${YOLO_CONF_THRESHOLD:-0.4}
+      YOLO_IOU_THRESHOLD: ${YOLO_IOU_THRESHOLD:-0.5}
+      YOLO_DEVICE: ${YOLO_DEVICE:-cpu}
+      ROI_CONFIG_PATH: ${ROI_CONFIG_PATH:-roi_config.json}
+      BACKEND_URL: ${BACKEND_URL:-http://backend:8000/api/v1}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY}
+      PUSH_INTERVAL_SECONDS: ${PUSH_INTERVAL_SECONDS:-2}
+      CAMERA_COUNTER_ID: ${CAMERA_COUNTER_ID:-}
+      FRAME_SKIP: ${FRAME_SKIP:-1}
+      MIN_DETECTION_AREA: ${MIN_DETECTION_AREA:-100}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      - backend
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2G
+        reservations:
+          cpus: "1"
+          memory: 1G
+
 volumes:
   pgdata:
