@@ -3,8 +3,8 @@
 > Update this file at the end of every work session. Any AI assistant (or you, months later) should be able to read this file plus `phases.md` and know exactly where things stand — no re-explaining the project from scratch.
 
 ## Current Status
-- **Stage:** **Phase 7A (WhatsApp conversational bot) complete on `main`** — WhatsApp bot service built, Dockerized, integrated with public APIs. Phase 7B (CV queue detection) next.
-- **Last updated:** 2026-09-01
+- **Stage:** **Phase 7B (CV queue detection) complete on `main`** — YOLOv8n + ByteTrack service built, Dockerized, backend integration complete with CV ingest endpoint and WebSocket broadcast. Phase 7C (CV-frontend integration) and Phase 8 (deployment) next.
+- **Last updated:** 2026-09-02
 
 ## Completed
 - [x] Proposal document finalized
@@ -84,6 +84,23 @@
   - Added to docker-compose.yml (port 3001, depends on backend)
   - 12 unit tests passing (session helpers)
   - Note: Meta business verification pending; mock mode recommended for local dev
+
+- [x] **Phase 7B — CV Queue Detection complete.**
+  - `cv-service/` — Python service (YOLOv8n person detection + ByteTrack tracking)
+  - Detector: `detector.py` — YOLOv8n on CPU, person class only, configurable confidence/IoU
+  - Tracker: `tracker.py` — ByteTrack wrapper with ROI entry/exit detection, dwell time
+  - ROI Manager: `roi.py` — Polygon regions per counter, loaded from JSON config
+  - Analytics: `analytics.py` — Queue length, service rate (people/min), dwell time, estimated wait
+  - Sender: `sender.py` — POST /cv/queue-update with retry/timeout handling
+  - Main loop: `main.py` — Camera capture → detect → track → analytics → send (throttled)
+  - Backend integration:
+    - Counter model: cv_enabled, cv_queue_length, cv_service_rate, cv_estimated_wait_min, cv_last_update, camera_url, roi_polygon
+    - Endpoint: `POST /api/v1/cv/queue-update` with X-Internal-API-Key auth
+    - WebSocket broadcast: `cv_update` event to institution subscribers
+    - GET `/api/v1/cv/counters/{id}/cv-status` for dashboard
+  - Dockerized: multi-stage Dockerfile with OpenCV dependencies, resource limits (2 CPU, 2GB RAM)
+  - Added to docker-compose.yml with environment config
+  - Tested: CV endpoint updates database and broadcasts via WebSocket
   - **Frontend foundation (carried from earlier in the phase):** `types/` (User/Institution/Counter/Personnel/Token/QueueSnapshot/AuthResponse), zustand auth store (`store/auth.ts`, persisted, login/register/refresh-with-rotation/logout), `lib/api-client.ts` (Bearer header + silent 401→refresh→retry), `lib/socket.ts` (WebSocket manager: JWT query-param auth, per-listener dispatch, 2s auto-reconnect, no reconnect when logged out), hooks `use-queue.ts` (WS + 30s polling fallback, connected flag) + `use-resources.ts` (counters/personnel/institution/tokens w/ filters), shadcn `ui/` primitives (alert/badge/card/dialog/input/label/select/separator/skeleton/status/table), auth forms (login/register).
   - **Backend addition for this phase:** `api/v1/personnel.py` + `schemas/personnel.py` (admin CRUD, soft-deactivate, counter assignment w/ tenant scoping; staff read-only), wired in `main.py`.
   - **Pages built (all client components, Next.js 16 App Router, Turbopack):** `(auth)/` login + register (+centered layout); `(dashboard)/layout.tsx` auth guard (redirects to /login when no token; renders skeletons meanwhile) with fixed sidebar + topbar (institution name via `/institutions/me`, user, logout via router); `overview` (4 KPIs: waiting/in-service/served-today/no-shows-today + compact live panel + personal card); `live-queue` (per-counter panels with positions, status badges, call/start/complete/no-show actions, live-updated via WS broadcast); `tokens` (issue-token form w/ counter select + history table w/ counter/status filters and inline transitions); `counters` + `personnel` (admin CRUD dialogs, admin-gated actions, staff read-only); `analytics` (KPIs from token history: today's served/no-show/abandonment, avg issue→call and issue→completed times, hour-of-day CSS bar chart, peak hour, per-counter table); landing `page.tsx` is now auth-aware (Sign in / Create institution vs. Open dashboard).
@@ -130,7 +147,7 @@
 - **Known notes for Phase 7 proper**: bot provider still undecided (Twilio/Cloud API/BaaS); `wa.me` deep links are already wired client-side once an institution sets its WhatsApp number; token numbers can collide across counters sharing a 3-letter prefix within one institution (pre-existing numbering quirk — public lookup picks latest, but worth fixing properly later).
 
 ## Not Started
-- Phase 7B (CV queue detection), Phase 7C (backend CV integration), Phase 8 (deployment), Phase 9 (testing/evaluation) — see `phases.md`
+- Phase 7C (frontend CV integration: show CV queue length on dashboard), Phase 8 (deployment), Phase 9 (testing/evaluation) — see `phases.md`
 
 ## Open Decisions
 See `prd.md` §8 and `architecture.md` §6 for detail. Short version:
@@ -151,6 +168,7 @@ See `prd.md` §8 and `architecture.md` §6 for detail. Short version:
 ## Session Log
 | Date | Summary |
 |---|---|
+| 2026-09-02 | **Phase 7B — CV Queue Detection complete.** Built `cv-service/`: YOLOv8n + ByteTrack person detection/tracking, ROI manager with polygon regions, queue analytics (length, service rate, dwell time, estimated wait). Backend integration: Counter model CV fields, POST /cv/queue-update endpoint with internal API key auth, WebSocket `cv_update` broadcast. Dockerized with resource limits. Added to docker-compose. Tested: CV endpoint updates DB + broadcasts WS. Next: Phase 7C (frontend CV integration) / Phase 8 (deployment). |
 | 2026-09-01 | **Phase 7A — WhatsApp Conversational Bot complete.** Built `whatsapp-bot/` service: webhook verification/handler, Upstash Redis sessions, Graph API client, join-queue/check-status/support flows, template notifications. Integrated with `/public/*` APIs. Dockerized + added to compose. 12 tests passing. Committed to `main` (dc7f45a). Meta verification pending; mock mode for dev. Next: Phase 7B — CV queue detection. |
 | 2026-08-05 | Reviewed proposal doc + directory sketch; created prd/architecture/rules/phases/design/memory docs; flagged 3 open questions between the proposal and the directory structure |
 | 2026-08-05 | Decided ML approach (Random Forest + linear regression baseline; pandas aggregation for peak detection); updated `architecture.md`, `rules.md`, `phases.md` accordingly; reviewed directory structure and confirmed no restructuring needed to start |
