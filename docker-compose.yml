@@ -39,5 +39,34 @@ services:
     depends_on:
       - backend
 
+  adminer:
+    image: adminer:latest
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    depends_on:
+      - db
+
+  whatsapp-bot:
+    build: ./whatsapp-bot
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      WHATSAPP_TOKEN: ${WHATSAPP_TOKEN}
+      PHONE_NUMBER_ID: ${PHONE_NUMBER_ID}
+      WEBHOOK_VERIFY_TOKEN: ${WEBHOOK_VERIFY_TOKEN}
+      WHATSAPP_API_VERSION: ${WHATSAPP_API_VERSION:-v20.0}
+      UPSTASH_REDIS_REST_URL: ${UPSTASH_REDIS_REST_URL}
+      UPSTASH_REDIS_REST_TOKEN: ${UPSTASH_REDIS_REST_TOKEN}
+      BACKEND_API_URL: ${BACKEND_API_URL:-http://backend:8000/api/v1}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY}
+      SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-24}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - "3001:3000"
+    depends_on:
+      - backend
+
 volumes:
   pgdata:

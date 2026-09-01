@@ -2,11 +2,30 @@
   "name": "whatsapp-bot",
   "version": "0.1.0",
   "private": true,
-  "description": "WhatsApp integration service for AI-QMS (placeholder — no logic yet)",
+  "description": "WhatsApp conversational bot for AI-QMS queue management",
   "scripts": {
-    "dev": "tsx src/index.ts",
+    "dev": "tsx watch src/index.ts",
     "build": "tsc",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "lint": "eslint src --ext .ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
-  "dependencies": {}
+  "dependencies": {
+    "express": "^4.19.2",
+    "axios": "^1.7.2",
+    "@upstash/redis": "^1.31.1",
+    "dotenv": "^16.4.5",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.14.2",
+    "typescript": "^5.4.5",
+    "tsx": "^4.15.0",
+    "vitest": "^2.0.0",
+    "eslint": "^8.57.0",
+    "@typescript-eslint/eslint-plugin": "^7.13.0",
+    "@typescript-eslint/parser": "^7.13.0"
+  }
 }
