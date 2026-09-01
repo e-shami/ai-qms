@@ -32,6 +32,7 @@ import {
 import { StatusDot } from "@/components/ui/status-dot";
 import { useCounters } from "@/hooks/use-resources";
 import { useQueue } from "@/hooks/use-queue";
+import { useCVUpdates } from "@/hooks/use-cv";
 import { api } from "@/lib/api-client";
 import { counterFormSchema, type CounterFormValues } from "@/lib/validators";
 import type { Counter } from "@/types";
@@ -133,12 +134,28 @@ function CounterFormDialog({
 export function CountersTab() {
   const { counters, loading, error, reload } = useCounters();
   const { snapshot } = useQueue();
+  const cvUpdate = useCVUpdates();
   const [createOpen, setCreateOpen] = useState(false);
   const [editCounter, setEditCounter] = useState<Counter | null>(null);
   const [deactivateTarget, setDeactivateTarget] = useState<Counter | null>(null);
 
   const waitingFor = (id: number) =>
     snapshot?.counters.find((entry) => entry.counter.id === id)?.waiting_count;
+
+  // Get CV queue length for a counter (from real-time WS or counter's stored value)
+  const cvQueueLengthFor = (id: number) => {
+    if (cvUpdate && cvUpdate.counter_id === id) {
+      return cvUpdate.queue_length;
+    }
+    return counters.find((c) => c.id === id)?.cv_queue_length ?? null;
+  };
+
+  const cvServiceRateFor = (id: number) => {
+    if (cvUpdate && cvUpdate.counter_id === id) {
+      return cvUpdate.service_rate;
+    }
+    return counters.find((c) => c.id === id)?.cv_service_rate ?? null;
+  };
 
   async function toggleActive(counter: Counter) {
     try {
@@ -193,12 +210,15 @@ export function CountersTab() {
                   <TableHead>Type</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Waiting</TableHead>
+                  <TableHead>CV Queue</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {counters.map((counter) => {
                   const waiting = waitingFor(counter.id);
+                  const cvQueue = cvQueueLengthFor(counter.id);
+                  const cvRate = cvServiceRateFor(counter.id);
                   return (
                     <TableRow key={counter.id}>
                       <TableCell className="font-medium">{counter.name}</TableCell>
@@ -217,6 +237,26 @@ export function CountersTab() {
                       </TableCell>
                       <TableCell className="tabular-nums text-muted-foreground">
                         {counter.is_active ? (waiting ?? "—") : "—"}
+                      </TableCell>
+                      <TableCell className="tabular-nums text-muted-foreground">
+                        {counter.is_active ? (
+                          cvQueue !== null ? (
+                            <span className="inline-flex items-center gap-1 text-sm text-primary">
+                              <span className="relative flex h-2 w-2">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
+                                <span className="relative inline-flex rounded-full h-2 w-2 bg-primary" />
+                              </span>
+                              {cvQueue}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )
+                        ) : (
+                          "—"
+                        )}
+                        {cvRate !== null && cvRate > 0 && (
+                          <span className="ml-2 text-xs text-muted-foreground">({cvRate.toFixed(1)}/min)</span>
+                        )}
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap justify-end gap-1.5">
@@ -253,6 +293,8 @@ export function CountersTab() {
           <ul className="space-y-3 md:hidden">
             {counters.map((counter) => {
               const waiting = waitingFor(counter.id);
+              const cvQueue = cvQueueLengthFor(counter.id);
+              const cvRate = cvServiceRateFor(counter.id);
               return (
                 <li key={counter.id} className="rounded-lg border bg-card p-4">
                   <div className="mb-3 flex items-start justify-between gap-2">
@@ -271,6 +313,18 @@ export function CountersTab() {
                       <Badge variant="secondary">Inactive</Badge>
                     )}
                   </div>
+                  {counter.is_active && cvQueue !== null && (
+                    <div className="mb-3 flex items-center gap-2 text-sm text-primary">
+                      <span className="relative flex h-1.5 w-1.5">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
+                        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-primary" />
+                      </span>
+                      <span>CV: {cvQueue} people</span>
+                      {cvRate !== null && cvRate > 0 && (
+                        <span className="text-muted-foreground">({cvRate.toFixed(1)}/min)</span>
+                      )}
+                    </div>
+                  )}
                   <div className="flex flex-wrap gap-1.5">
                     <Button
                       size="xs"

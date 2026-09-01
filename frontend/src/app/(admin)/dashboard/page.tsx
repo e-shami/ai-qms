@@ -77,6 +77,18 @@ function CounterBoardCard({ entry }: { entry: CounterBoardEntry }) {
         <Badge variant={entry.waiting_count > 0 ? "secondary" : "outline"}>
           {entry.waiting_count} waiting
         </Badge>
+        {entry.cv_queue_length !== undefined && entry.cv_queue_length !== null && (
+          <Badge variant="secondary" className="text-primary border-primary bg-primary/10">
+            <span className="relative flex h-1.5 w-1.5 mr-1">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
+              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-primary" />
+            </span>
+            CV: {entry.cv_queue_length}
+            {entry.cv_service_rate && entry.cv_service_rate > 0 && (
+              <span className="ml-1 text-xs">({entry.cv_service_rate.toFixed(1)}/min)</span>
+            )}
+          </Badge>
+        )}
       </CardContent>
     </Card>
   );
@@ -171,7 +183,7 @@ export default function AdminDashboardPage() {
                       {[entry.title, entry.counter_id != null ? `Counter #${entry.counter_id}` : null]
                         .filter(Boolean)
                         .join(" · ") || "Unassigned"}
-                    </p>
+                  </p>
                   </div>
                   <StatusLabel tone={presenceTone(entry)} label={presenceLabel(entry)} pulse={entry.serving_token_number != null} />
                 </div>

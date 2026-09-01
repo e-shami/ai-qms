@@ -123,6 +123,11 @@ def admin_overview(
             is_active=counter.is_active,
             status="closed",
             waiting_count=0,
+            cv_queue_length=counter.cv_queue_length if counter.cv_enabled else None,
+            cv_service_rate=counter.cv_service_rate if counter.cv_enabled else None,
+            cv_estimated_wait_min=counter.cv_estimated_wait_min if counter.cv_enabled else None,
+            cv_last_update=counter.cv_last_update,
+            cv_enabled=counter.cv_enabled,
         )
         if counter.is_active:
             active_rows = (

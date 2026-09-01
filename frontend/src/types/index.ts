@@ -36,6 +36,15 @@ export interface Counter {
   type: string | null;
   is_active: boolean;
   created_at: string;
+
+  // CV Integration fields
+  cv_enabled?: boolean;
+  cv_queue_length?: number;
+  cv_service_rate?: number;
+  cv_estimated_wait_min?: number;
+  cv_last_update?: string | null;
+  camera_url?: string | null;
+  roi_polygon?: string | null;
 }
 
 export interface Personnel {
@@ -97,6 +106,26 @@ export interface PresenceEntry {
   serving_token_status: TokenStatus | null;
 }
 
+// --- CV Integration -----------------------------------------------------------
+
+export interface CVQueueUpdate {
+  counter_id: number;
+  counter_name: string;
+  queue_length: number;
+  service_rate: number;
+  estimated_wait_min: number;
+  timestamp: number;
+}
+
+export interface CVStatus {
+  counter_id: number;
+  cv_queue_length: number;
+  cv_service_rate: number;
+  cv_estimated_wait_min: number;
+  cv_last_update: string | null;
+  cv_enabled: boolean;
+}
+
 export interface AuthResponse {
   access_token: string;
   refresh_token: string;
@@ -122,7 +151,8 @@ export interface ProfileUpdate {
 /** Payloads of the tagged WebSocket frames sent by the backend. */
 export type SocketFrame =
   | { event: "queue"; data: QueueSnapshot }
-  | { event: "presence"; data: { entries: PresenceEntry[] } };
+  | { event: "presence"; data: { entries: PresenceEntry[] } }
+  | { event: "cv_update"; data: CVQueueUpdate };
 
 export interface InstitutionVerify {
   code: string;
@@ -151,6 +181,11 @@ export interface CounterBoardEntry {
   current_token_number: string | null;
   current_token_status: TokenStatus | null;
   served_by_name: string | null;
+  cv_queue_length?: number;
+  cv_service_rate?: number;
+  cv_estimated_wait_min?: number;
+  cv_last_update?: string | null;
+  cv_enabled?: boolean;
 }
 
 export interface TodayTotals {
