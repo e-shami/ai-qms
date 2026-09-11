@@ -5,45 +5,36 @@ FROM python:3.12-slim AS builder
 WORKDIR /app
 
 # Install build dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout=30 && apt-get install -y --no-install-recommends \
     gcc \
     g++ \
-    libglib2.0-0 \
-    libsm6 \
-    libxext6 \
-    libxrender-dev \
-    libgl1-mesa-glx \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir --user -r requirements.txt
+RUN pip install --no-cache-dir --timeout=120 --retries=3 --extra-index-url https://download.pytorch.org/whl/cpu -r requirements.txt
 
 # Runtime stage
 FROM python:3.12-slim AS runner
 
 WORKDIR /app
 
-# Install runtime dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Install runtime dependencies (minimal for headless OpenCV)
+RUN apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout=30 && apt-get install -y --no-install-recommends \
     libglib2.0-0 \
     libsm6 \
     libxext6 \
-    libxrender-dev \
-    libgl1-mesa-glx \
-    libopencv-dev \
+    libxrender1 \
+    libgl1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
 RUN addgroup --system cvuser && adduser --system --ingroup cvuser cvuser
 
-# Copy Python packages from builder
-COPY --from=builder /root/.local /home/cvuser/.local
+# Copy Python packages from builder (global site-packages)
+COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 
 # Copy application code
 COPY --chown=cvuser:cvuser . .
-
-# Ensure PATH includes user packages
-ENV PATH=/home/cvuser/.local/bin:$PATH
 
 USER cvuser
 
