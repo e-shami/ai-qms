@@ -20,7 +20,7 @@ export async function processCheckStatusFlow(
   const tokenNumber = textBody.trim().toUpperCase();
 
   if (!/^[A-Z]{3}\d{4,}$/i.test(tokenNumber)) {
-    await waClient.sendText(phone, 'Invalid token format. Please enter a valid token number (e.g., GEN-0042).');
+    await waClient.sendText(phone, 'Invalid token format. Please enter a valid token number (e.g., GEN-0042), or type "hi" or "menu" to return to the main menu.');
     return;
   }
 

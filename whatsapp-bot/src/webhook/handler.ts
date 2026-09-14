@@ -56,16 +56,13 @@ async function processIncomingMessage(message: WhatsAppMessage, phoneNumberId: s
 
   console.log(`📨 From ${phone} (state: ${session.state}):`, textBody ?? `${message.type} message`);
 
-  const isHelp = textBody?.toLowerCase() === 'help' || textBody?.toLowerCase() === 'menu';
-  const isRestart = textBody?.toLowerCase() === 'restart' || textBody?.toLowerCase() === 'start over';
-
-  if (isRestart) {
-    await resetSession(phone);
-    await waClient.sendText(phone, '🔄 Session restarted. Type "help" to see what I can do.');
-    return;
-  }
-
-  if (isHelp) {
+  const command = textBody?.trim().toLowerCase();
+  if (command && ['hi', 'hello', 'hey', 'help', 'menu', 'restart', 'start over'].includes(command)) {
+    // Exit the conversation flow without deleting an issued token reference.
+    await updateSession(phone, {
+      state: 'idle',
+      data: { flow: undefined, step: undefined, awaitingHuman: undefined },
+    });
     await showHelpMenu(phone);
     return;
   }
@@ -221,7 +218,10 @@ async function startJoinQueueFlow(phone: string): Promise<void> {
 
 async function startCheckStatusFlow(phone: string): Promise<void> {
   const waClient = getWhatsAppClient();
-  await waClient.sendText(phone, 'Please enter your token number (e.g., GEN-0042) or institution code + token:');
+  const session = await getSession(phone);
+  await waClient.sendText(phone, session.data.tokenNumber
+    ? 'Please enter your token number (e.g., GEN-0042). Type "hi" or "menu" to return to the main menu.'
+    : 'No token is saved in this chat. If you already have a token, enter its number (e.g., GEN-0042). Otherwise, type "menu" and choose Join Queue to generate one.');
   await updateSession(phone, { state: 'checking_status', data: { flow: 'check_status' } });
 }
 
@@ -311,6 +311,6 @@ async function showHelpMenu(phone: string): Promise<void> {
       { id: 'status', title: 'Check Status' },
       { id: 'support', title: 'Support' },
     ],
-    'You can also type a token number directly (e.g., GEN-0042).'
+    'Type "hi" or "menu" anytime to return here.'
   );
 }

@@ -132,17 +132,9 @@ async function handleNameInput(
   const waClient = getWhatsAppClient();
   const name = textBody?.trim();
 
-  if (!name || name.toLowerCase() === 'skip') {
-    await updateSession(phone, {
-      data: { ...session.data, customerName: undefined, step: 4 },
-    });
-  } else if (name.length > 100) {
+  if (name && name.length > 100) {
     await waClient.sendText(phone, 'Name is too long. Please enter a shorter name (max 100 characters).');
     return;
-  } else {
-    await updateSession(phone, {
-      data: { ...session.data, customerName: name, step: 4 },
-    });
   }
 
   const displayName = name && name.toLowerCase() !== 'skip' ? name : 'Anonymous';
@@ -157,8 +149,15 @@ async function handleNameInput(
       { id: 'confirm_yes', title: 'Yes, Get Token' },
       { id: 'confirm_no', title: 'No, Go Back' },
     ],
-    'Token will be generated with your position and estimated wait time.'
+    'Your token will include your position and estimated wait.'
   );
+  await updateSession(phone, {
+    state: 'awaiting_confirmation',
+    data: {
+      customerName: name && name.toLowerCase() !== 'skip' ? name : undefined,
+      step: 4,
+    },
+  });
 }
 
 async function handleConfirmation(
