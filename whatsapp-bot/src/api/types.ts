@@ -1,41 +1,31 @@
 export interface InstitutionPublic {
-  id: string;
+  id: number;
   name: string;
-  type: string;
+  type: string | null;
   whatsapp_number?: string | null;
-  counters?: CounterPublic[];
 }
 
 export interface CounterPublic {
-  id: string;
+  id: number;
   name: string;
-  type: string;
-  current_queue_length?: number;
-  is_active: boolean;
+  type: string | null;
 }
 
 export interface TokenPublic {
-  id: string;
   token_number: string;
   status: 'waiting' | 'called' | 'in_service' | 'served' | 'no_show' | 'declined';
-  counter_id: string;
+  counter_id: number;
   counter_name: string;
-  institution_id: string;
-  customer_name?: string | null;
-  customer_phone?: string | null;
-  queue_position?: number | null;
-  estimated_wait_min?: number | null;
+  position: number | null;
+  people_ahead: number | null;
+  estimated_wait_min: number | null;
   issued_at: string;
-  called_at?: string | null;
-  started_at?: string | null;
-  completed_at?: string | null;
+  called_at: string | null;
+  completed_at: string | null;
 }
 
-export interface TokenIssueRequest {
-  institution_id: string;
-  counter_id: string;
-  customer_name?: string;
-  customer_phone?: string;
+export interface BotTicket extends TokenPublic {
+  id: number;
+  institution_id: number;
+  institution_name: string;
 }
-
-export interface TokenIssueResponse extends TokenPublic {}

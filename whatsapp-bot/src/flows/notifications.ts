@@ -115,8 +115,8 @@ async function sendQueueUpdate(waClient: ReturnType<typeof getWhatsAppClient>, p
   const components: TemplateComponent[] = [
     { type: 'body', parameters: [
       { type: 'text', text: payload.tokenNumber },
-      { type: 'text', text: String(payload.position || 'N/A') },
-      { type: 'text', text: String(payload.estimatedWaitMin || 'N/A') },
+      { type: 'text', text: String(payload.position ?? 'N/A') },
+      { type: 'text', text: String(payload.estimatedWaitMin ?? 'N/A') },
     ] as TemplateParameter[] },
   ];
 

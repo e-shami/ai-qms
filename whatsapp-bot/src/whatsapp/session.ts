@@ -13,6 +13,12 @@ export type SessionState =
   | 'support_escalated';
 
 export interface SessionData {
+  statusTokenIds?: number[];
+  statusOffset?: number;
+  statusHasMore?: boolean;
+  statusFilter?: string;
+  listRows?: Array<{ id: string; title: string; description?: string }>;
+  listPage?: number;
   institutionId?: string;
   institutionName?: string;
   institutionCode?: string;

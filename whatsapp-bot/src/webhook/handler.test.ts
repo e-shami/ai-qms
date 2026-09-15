@@ -5,30 +5,33 @@ vi.mock('../whatsapp/session', () => ({
   getSession: vi.fn(),
   updateSession: vi.fn(),
   resetSession: vi.fn(),
-  extractPhoneFromMessage: () => '123',
-  getTextBody: (message: { text: { body: string } }) => message.text.body,
+  extractPhoneFromMessage: () => '15551234567',
+  getTextBody: (message: { text?: { body: string }; interactive?: { button_reply: { id: string } } }) => message.text?.body ?? message.interactive?.button_reply.id,
   isInteractiveListReply: () => false,
   isInteractiveButtonReply: () => false,
 }));
 vi.mock('../whatsapp/client', () => ({
   getWhatsAppClient: () => client,
 }));
-vi.mock('../flows/checkStatus', () => ({ processCheckStatusFlow: vi.fn() }));
+vi.mock('../flows/checkStatus', () => ({ processCheckStatusFlow: vi.fn(), startCheckStatusFlow: vi.fn() }));
+vi.mock('../config', () => ({ getEnv: () => ({ PHONE_NUMBER_ID: 'test' }) }));
 
 const client = vi.hoisted(() => ({
   markAsRead: vi.fn(), sendText: vi.fn(), sendInteractiveButtons: vi.fn(),
 }));
 
 import { getSession, updateSession, resetSession } from '../whatsapp/session';
-import { processCheckStatusFlow } from '../flows/checkStatus';
+import { processCheckStatusFlow, startCheckStatusFlow } from '../flows/checkStatus';
 import { handleWebhook } from './handler';
 
-async function send(text: string) {
+async function send(text: string, button = false, phoneNumberId = 'test') {
   const req = { body: {
     object: 'whatsapp_business_account',
     entry: [{ changes: [{ value: {
-      metadata: { phone_number_id: 'test' },
-      messages: [{ from: '123', id: 'test', type: 'text', text: { body: text } }],
+      metadata: { phone_number_id: phoneNumberId },
+      messages: [button
+        ? { from: '15551234567', id: 'test', type: 'interactive', interactive: { type: 'button_reply', button_reply: { id: text, title: 'Check Status' } } }
+        : { from: '15551234567', id: 'test', type: 'text', text: { body: text } }],
     } }] }],
   } } as Request;
   const res = { status: vi.fn().mockReturnThis(), send: vi.fn() };
@@ -37,6 +40,7 @@ async function send(text: string) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  client.markAsRead.mockResolvedValue(undefined);
   vi.mocked(getSession).mockResolvedValue({
     phone: '123', state: 'checking_status',
     data: { tokenNumber: 'GEN-0042', flow: 'check_status' },
@@ -48,7 +52,7 @@ describe('global menu navigation', () => {
   it.each(['hi', ' Hi ', 'hello', 'hey', 'menu', 'help', 'restart', 'start over'])
     ('exits status entry for %s without clearing token data', async (command) => {
       await send(command);
-      expect(updateSession).toHaveBeenCalledWith('123', {
+      expect(updateSession).toHaveBeenCalledWith('15551234567', {
         state: 'idle', data: { flow: undefined, step: undefined, awaitingHuman: undefined },
       });
       expect(resetSession).not.toHaveBeenCalled();
@@ -62,11 +66,33 @@ describe('global menu navigation', () => {
     expect(client.sendInteractiveButtons).not.toHaveBeenCalled();
   });
 
-  it('explains missing chat token when status is selected from idle', async () => {
+  it('looks up existing tokens even with no saved chat token', async () => {
     vi.mocked(getSession).mockResolvedValue({
       phone: '123', state: 'idle', data: {}, createdAt: 0, updatedAt: 0,
     });
     await send('status');
-    expect(client.sendText).toHaveBeenCalledWith('123', expect.stringContaining('No token is saved in this chat'));
+    expect(startCheckStatusFlow).toHaveBeenCalledWith('15551234567');
+  });
+  it.each(['status', 'check', 'my token'])('routes %s out of an existing flow', async (command) => {
+    await send(command);
+    expect(startCheckStatusFlow).toHaveBeenCalledWith('15551234567');
+  });
+  it('does not claim cancellation happened', async () => {
+    await send('cancel');
+    expect(client.sendText).toHaveBeenCalledWith('15551234567', expect.stringContaining('has not been changed'));
+  });
+  it('continues after failed read receipt', async () => {
+    client.markAsRead.mockRejectedValueOnce(new Error('failed'));
+    await send('status');
+    expect(startCheckStatusFlow).toHaveBeenCalled();
+  });
+  it('routes the Check Status button from another conversation flow', async () => {
+    await send('status', true);
+    expect(startCheckStatusFlow).toHaveBeenCalledWith('15551234567');
+  });
+  it('ignores events for other business phone-number IDs', async () => {
+    await send('status', false, 'other-business');
+    expect(getSession).not.toHaveBeenCalled();
+    expect(startCheckStatusFlow).not.toHaveBeenCalled();
   });
 });

@@ -22,6 +22,7 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://aiqms:aiqms@db:5432/aiqms}
       CORS_ORIGINS: ${CORS_ORIGINS:-["http://localhost:3000"]}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY}
     ports:
       - "8000:8000"
     depends_on:
@@ -56,6 +57,8 @@ services:
       WHATSAPP_TOKEN: ${WHATSAPP_TOKEN}
       PHONE_NUMBER_ID: ${PHONE_NUMBER_ID}
       WEBHOOK_VERIFY_TOKEN: ${WEBHOOK_VERIFY_TOKEN}
+      WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET}
+      PUBLIC_WEB_URL: ${PUBLIC_WEB_URL:-http://localhost:3000}
       WHATSAPP_API_VERSION: ${WHATSAPP_API_VERSION:-v20.0}
       UPSTASH_REDIS_REST_URL: ${UPSTASH_REDIS_REST_URL}
       UPSTASH_REDIS_REST_TOKEN: ${UPSTASH_REDIS_REST_TOKEN}

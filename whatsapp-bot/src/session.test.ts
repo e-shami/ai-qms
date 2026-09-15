@@ -4,6 +4,7 @@ import { describe, it, expect, vi } from 'vitest';
 const envSetup = vi.hoisted(() => {
   process.env.NODE_ENV = 'test';
   process.env.WHATSAPP_TOKEN = 'test-token';
+  process.env.WHATSAPP_APP_SECRET = 'test-app-secret';
   process.env.PHONE_NUMBER_ID = '123456789';
   process.env.WEBHOOK_VERIFY_TOKEN = 'test-verify-token-min-32-chars-long';
   process.env.UPSTASH_REDIS_REST_URL = 'https://test.upstash.io';

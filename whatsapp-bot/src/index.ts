@@ -1,6 +1,7 @@
 import express, { Request, Response, NextFunction } from 'express';
 import { verifyWebhook } from './webhook/verify';
 import { handleWebhook } from './webhook/handler';
+import { verifySignature } from './webhook/signature';
 import { validateEnv, getEnv } from './config';
 import { cleanupExpiredSessions } from './whatsapp/session';
 import { getWhatsAppClient, resetWhatsAppClient } from './whatsapp/client';
@@ -9,6 +10,7 @@ validateEnv();
 const env = getEnv();
 
 const app = express();
+app.post('/webhook', express.raw({ type: 'application/json', limit: '1mb' }), verifySignature, handleWebhook);
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true }));
 
@@ -22,10 +24,9 @@ app.get('/health', (_req: Request, res: Response) => {
 });
 
 app.get('/webhook', verifyWebhook);
-app.post('/webhook', handleWebhook);
 
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
-  console.error('Unhandled error:', err);
+  console.error('Unhandled request error');
   res.status(500).json({ error: 'Internal server error' });
 });
 

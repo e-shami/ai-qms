@@ -3,6 +3,7 @@ import { getWhatsAppClient } from '../whatsapp/client';
 import { getEnv } from '../config';
 import { WhatsAppMessage } from '../whatsapp/types';
 import { CounterPublic, TokenPublic } from '../api/types';
+import { showListPage } from '../whatsapp/lists';
 
 export async function processJoinQueueFlow(
   phone: string,
@@ -44,10 +45,16 @@ async function handleInstitutionSelection(
     return;
   }
 
-  const institutionId = message.interactive.list_reply.id.replace('inst_', '');
+  const selected = session.data.listRows?.find(row => row.id === message.interactive.list_reply.id);
+  if (!selected || !/^inst_\d+$/.test(selected.id)) {
+    await waClient.sendText(phone, 'Please select an institution from the current list, or type "join" to reload.');
+    return;
+  }
+  const institutionId = selected.id.replace('inst_', '');
 
   try {
     const response = await fetch(`${getEnv().BACKEND_API_URL}/public/institutions/${institutionId}/counters`, {
+      signal: AbortSignal.timeout(10000),
       headers: { 'X-Internal-API-Key': getEnv().INTERNAL_API_KEY },
     });
 
@@ -64,30 +71,22 @@ async function handleInstitutionSelection(
       rows: counters.map((c) => ({
         id: `cnt_${c.id}`,
         title: c.name,
-        description: `${c.type} • ${c.current_queue_length ?? 0} waiting`,
+        description: c.type ?? 'Service counter',
       })),
     }];
 
-    await waClient.sendInteractiveList(
-      phone,
-      '🎯 Choose Counter',
-      `You selected: ${message.interactive.list_reply.title}\n\nPick a service counter:`,
-      'Choose Counter',
-      sections,
-      'Type "restart" to go back.'
-    );
+    await showListPage(phone, sections[0].rows);
 
     await updateSession(phone, {
       state: 'awaiting_counter',
       data: {
-        ...session.data,
         institutionId,
-        institutionName: message.interactive.list_reply.title,
+        institutionName: selected.title,
         step: 2,
       },
     });
   } catch (error) {
-    console.error('Counter fetch failed:', error);
+    console.error('Counter fetch failed');
     await waClient.sendText(phone, 'Unable to load counters. Please try again.');
   }
 }
@@ -104,21 +103,25 @@ async function handleCounterSelection(
     return;
   }
 
-  const counterId = message.interactive.list_reply.id.replace('cnt_', '');
+  const selected = session.data.listRows?.find(row => row.id === message.interactive.list_reply.id);
+  if (!selected || !/^cnt_\d+$/.test(selected.id)) {
+    await waClient.sendText(phone, 'Please select a counter from the current list.');
+    return;
+  }
+  const counterId = selected.id.replace('cnt_', '');
 
   await updateSession(phone, {
     state: 'awaiting_name',
     data: {
-      ...session.data,
       counterId,
-      counterName: message.interactive.list_reply.title,
+      counterName: selected.title,
       step: 3,
     },
   });
 
   await waClient.sendText(
     phone,
-    `You selected: ${message.interactive.list_reply.title}\n\n` +
+    `You selected: ${selected.title}\n\n` +
     `Please enter your name (optional, for identification):\n` +
     `Or type "skip" to proceed without a name.`
   );
@@ -131,6 +134,10 @@ async function handleNameInput(
 ): Promise<void> {
   const waClient = getWhatsAppClient();
   const name = textBody?.trim();
+  if (!name) {
+    await waClient.sendText(phone, 'Please type your name or "skip".');
+    return;
+  }
 
   if (name && name.length > 100) {
     await waClient.sendText(phone, 'Name is too long. Please enter a shorter name (max 100 characters).');
@@ -191,6 +198,7 @@ async function issueToken(phone: string, session: Awaited<ReturnType<typeof getS
 
   try {
     const response = await fetch(`${getEnv().BACKEND_API_URL}/public/tokens`, {
+      signal: AbortSignal.timeout(10000),
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -211,10 +219,16 @@ async function issueToken(phone: string, session: Awaited<ReturnType<typeof getS
 
     const token = (await response.json()) as TokenPublic;
     const statusEmoji = '⏳';
-    const position = token.queue_position ?? 'N/A';
-    const estWait = token.estimated_wait_min ? ` ~${token.estimated_wait_min} min` : '';
+    const position = token.position ?? 'N/A';
+    const estWait = token.estimated_wait_min != null ? ` ~${token.estimated_wait_min} min` : '';
 
-    const trackingUrl = `${getEnv().BACKEND_API_URL.replace('/api/v1', '')}/token/${token.token_number}?institution=${token.institution_id}`;
+    const webUrl = getEnv().PUBLIC_WEB_URL;
+    const trackingUrl = webUrl ? `${webUrl.replace(/\/$/, '')}/token/${encodeURIComponent(token.token_number)}?institution=${session.data.institutionId}` : undefined;
+
+    // Persist issuance before delivery so a send failure cannot leave Confirm active.
+    await updateSession(phone, { state: 'in_queue', data: {
+      tokenNumber: token.token_number, tokenId: undefined, flow: undefined, step: undefined,
+    } });
 
     await waClient.sendText(
       phone,
@@ -225,36 +239,27 @@ async function issueToken(phone: string, session: Awaited<ReturnType<typeof getS
       `👤 Name: ${session.data.customerName ?? 'Anonymous'}\n` +
       `📍 Position: ${position}${estWait}\n` +
       `⏰ Issued: ${new Date(token.issued_at).toLocaleString()}\n\n` +
-      `🔗 Track live: ${trackingUrl}\n\n` +
-      `Type "status" to check your position, "cancel" to leave the queue, or "support" for help.`
+      (trackingUrl ? `Track live: ${trackingUrl}\n\n` : '') +
+      `Type "status" to check your position or "support" for help. Contact staff for cancellation.`
     );
 
-    await updateSession(phone, {
-      state: 'in_queue',
-      data: {
-        ...session.data,
-        tokenNumber: token.token_number,
-        tokenId: token.id,
-        flow: undefined,
-        step: undefined,
-      },
-    });
   } catch (error) {
-    console.error('Token issuance failed:', error);
-    await waClient.sendText(phone, `Failed to issue token: ${error instanceof Error ? error.message : 'Please try again.'}`);
+    console.error('Token issuance or delivery failed');
+    await waClient.sendText(phone, 'Unable to complete this request. Type "status" to check whether a token was issued before trying again.');
   }
 }
 
-async function startJoinQueueFlow(phone: string): Promise<void> {
+export async function startJoinQueueFlow(phone: string): Promise<void> {
   const waClient = getWhatsAppClient();
 
   try {
     const response = await fetch(`${getEnv().BACKEND_API_URL}/public/institutions`, {
+      signal: AbortSignal.timeout(10000),
       headers: { 'X-Internal-API-Key': getEnv().INTERNAL_API_KEY },
     });
 
     if (!response.ok) throw new Error('Failed to fetch institutions');
-    const institutions = (await response.json()) as { id: string; name: string; type: string; counters?: CounterPublic[] }[];
+    const institutions = (await response.json()) as { id: number; name: string; type: string | null }[];
 
     if (!institutions.length) {
       await waClient.sendText(phone, 'No institutions are currently available. Please try again later.');
@@ -266,22 +271,15 @@ async function startJoinQueueFlow(phone: string): Promise<void> {
       rows: institutions.map((inst) => ({
         id: `inst_${inst.id}`,
         title: inst.name,
-        description: `${inst.type} • ${inst.counters?.length ?? 0} counters`,
+        description: inst.type ?? 'Institution',
       })),
     }];
 
-    await waClient.sendInteractiveList(
-      phone,
-      '🏢 Choose Institution',
-      'Select the institution where you want to join a queue:',
-      'Choose Institution',
-      sections,
-      'Type "restart" to cancel anytime.'
-    );
+    await showListPage(phone, sections[0].rows);
 
     await updateSession(phone, { state: 'awaiting_institution', data: { flow: 'join_queue', step: 1 } });
   } catch (error) {
-    console.error('Failed to fetch institutions:', error);
+    console.error('Failed to fetch institutions');
     await waClient.sendText(phone, 'Unable to load institutions right now. Please try again later.');
   }
 }

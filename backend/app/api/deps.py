@@ -1,4 +1,5 @@
 import jwt
+import secrets
 from fastapi import Depends, HTTPException, status, Header
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
@@ -84,10 +85,12 @@ def get_current_personnel(
 
 
 def verify_internal_api_key(
-    x_internal_api_key: str = Header(..., alias="X-Internal-API-Key"),
+    x_internal_api_key: str | None = Header(None, alias="X-Internal-API-Key"),
 ) -> str:
     """Verify internal API key for service-to-service communication."""
-    if x_internal_api_key != settings.INTERNAL_API_KEY:
+    if not x_internal_api_key or not settings.INTERNAL_API_KEY or not secrets.compare_digest(
+        x_internal_api_key.encode(), settings.INTERNAL_API_KEY.encode()
+    ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid internal API key",

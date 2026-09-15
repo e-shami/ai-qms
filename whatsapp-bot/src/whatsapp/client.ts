@@ -27,9 +27,9 @@ class WhatsAppClient {
       (response) => response,
       (error: AxiosError<WhatsAppErrorResponse>) => {
         if (error.response?.data?.error) {
-          console.error('WhatsApp API Error:', JSON.stringify(error.response.data.error, null, 2));
+          console.error('WhatsApp API request failed', { status: error.response.status, code: error.response.data.error.code });
         }
-        return Promise.reject(error);
+        return Promise.reject(new Error('WhatsApp API request failed'));
       }
     );
   }
@@ -58,7 +58,7 @@ class WhatsAppClient {
     return this.sendMessage({
       to,
       type: 'text',
-      text: { body, preview_url: previewUrl },
+      text: { body: body.slice(0, 4096), preview_url: previewUrl },
     });
   }
 
@@ -87,17 +87,22 @@ class WhatsAppClient {
     sections: Array<{ title: string; rows: Array<{ id: string; title: string; description?: string }> }>,
     footerText?: string
   ): Promise<WhatsAppApiResponse> {
+    if (sections.reduce((count, section) => count + section.rows.length, 0) > 10) {
+      throw new Error('WhatsApp lists require pagination above 10 rows');
+    }
     return this.sendMessage({
       to,
       type: 'interactive',
       interactive: {
         type: 'list',
-        header: { type: 'text', text: headerText },
-        body: { text: bodyText },
-        footer: footerText ? { text: footerText } : undefined,
+        header: { type: 'text', text: headerText.slice(0, 60) },
+        body: { text: bodyText.slice(0, 1024) },
+        footer: footerText ? { text: footerText.slice(0, 60) } : undefined,
         action: {
-          button: buttonText,
-          sections,
+          button: buttonText.slice(0, 20),
+          sections: sections.map(section => ({ title: section.title.slice(0, 24), rows: section.rows.map(row => ({
+            id: row.id, title: row.title.slice(0, 24), description: row.description?.slice(0, 72),
+          })) })),
         },
       },
     });
@@ -110,15 +115,16 @@ class WhatsAppClient {
     buttons: Array<{ id: string; title: string }>,
     footerText?: string
   ): Promise<WhatsAppApiResponse> {
+    if (buttons.length < 1 || buttons.length > 3) throw new Error('WhatsApp requires 1-3 buttons');
     return this.sendMessage({
       to,
       type: 'interactive',
       interactive: {
         type: 'button',
-        header: { type: 'text', text: headerText },
-        body: { text: bodyText },
-        footer: footerText ? { text: footerText } : undefined,
-        action: { buttons: buttons.map((b) => ({ type: 'reply', reply: { id: b.id, title: b.title } })) },
+        header: { type: 'text', text: headerText.slice(0, 60) },
+        body: { text: bodyText.slice(0, 1024) },
+        footer: footerText ? { text: footerText.slice(0, 60) } : undefined,
+        action: { buttons: buttons.map((b) => ({ type: 'reply', reply: { id: b.id, title: b.title.slice(0, 20) } })) },
       },
     });
   }
