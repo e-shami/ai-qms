@@ -5,6 +5,24 @@ const API_BASE =
 
 export { API_BASE };
 
+export async function apiErrorMessage(res: Response, fallback: string): Promise<string> {
+  const body: unknown = await res.json().catch(() => null);
+  if (!body || typeof body !== "object" || !("detail" in body)) return fallback;
+  const detail = body.detail;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    // Never echo validation input/context: they may contain CNIC or phone data.
+    const messages = detail.flatMap((item: unknown) => {
+      if (!item || typeof item !== "object" || !("msg" in item) || typeof item.msg !== "string") return [];
+      const field = "loc" in item && Array.isArray(item.loc)
+        ? item.loc.filter((part) => typeof part === "string" && part !== "body").join(".") : "";
+      return [field ? `${field}: ${item.msg}` : item.msg];
+    });
+    if (messages.length) return messages.join("; ");
+  }
+  return fallback;
+}
+
 export class ApiError extends Error {
   status: number;
 
@@ -53,14 +71,7 @@ async function request<T>(
   }
 
   if (!res.ok) {
-    let detail: string = await res.text();
-    try {
-      const parsed = await res.json();
-      if (typeof parsed?.detail === "string") detail = parsed.detail;
-    } catch {
-      // keep raw text
-    }
-    throw new ApiError(res.status, detail);
+    throw new ApiError(res.status, await apiErrorMessage(res, `Request failed (${res.status})`));
   }
 
   if (res.status === 204) return undefined as T;

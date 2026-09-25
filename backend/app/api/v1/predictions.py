@@ -22,7 +22,9 @@ class WaitPredictionOut(BaseModel):
     estimated_wait_min: float
     method: str
     avg_service_min: float | None = None
-    ml_estimate_min: float
+    ml_estimate_min: float | None
+    ml_status: str
+    ml_mode: str = "shadow_only"
 
 
 @router.get("/wait", response_model=WaitPredictionOut)
@@ -33,15 +35,17 @@ def predict_wait(
 ) -> WaitPredictionOut:
     """Layered wait estimate for the next token at an owned, active counter."""
     counter = token_service.get_owned_counter(db, user.institution_id, counter_id)
-    ahead = active_queue_length(db, counter.id)
+    ahead = active_queue_length(db, counter.id, user.institution_id)
     estimate, method = estimate_wait_minutes(
         db, institution_id=user.institution_id, counter=counter, people_ahead=ahead
     )
+    ml = ml_estimate_minutes(db, institution_id=user.institution_id, counter=counter, people_ahead=ahead)
     return WaitPredictionOut(
         counter_id=counter.id,
         queue_ahead=ahead,
         estimated_wait_min=estimate,
         method=method,
         avg_service_min=institution_service_rate(db, user.institution_id),
-        ml_estimate_min=ml_estimate_minutes(db, institution_id=user.institution_id, counter=counter),
+        ml_estimate_min=ml.estimate_min,
+        ml_status=ml.status,
     )

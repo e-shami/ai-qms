@@ -33,7 +33,9 @@ import { CounterSwitcher } from "@/components/workspace/counter-switcher";
 import { PresenceControl } from "@/components/workspace/presence-control";
 import { useQueue } from "@/hooks/use-queue";
 import { useWorkspace } from "@/hooks/use-workspace";
+import { useInstitution } from "@/hooks/use-resources";
 import { api } from "@/lib/api-client";
+import { PriorityReview } from "@/components/tokens/priority-review";
 import { declineSchema, type DeclineFormValues } from "@/lib/validators";
 import type { Token } from "@/types";
 
@@ -57,6 +59,7 @@ function useTicker(active: boolean) {
 
 export default function WorkspacePage() {
   const { workspace, loading, error, reload } = useWorkspace();
+  const { institution } = useInstitution();
   const [declineTarget, setDeclineTarget] = useState<Token | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   // Queue hook keeps the WS subscription alive for the switcher's counts.
@@ -266,7 +269,7 @@ export default function WorkspacePage() {
           </Card>
         ) : (
           <ul className="space-y-2">
-            {upNext.slice(0, 10).map((token) => (
+            {upNext.map((token) => (
               <li key={token.id}>
                 <Card>
                   <CardContent className="flex flex-wrap items-center gap-x-4 gap-y-1 py-3">
@@ -290,7 +293,7 @@ export default function WorkspacePage() {
                     <Button
                       size="xs"
                       disabled={
-                        busyAction !== null || serving?.status === "in_service"
+                        busyAction !== null || serving !== null || token.id !== upNext[0]?.id
                       }
                       onClick={() =>
                         runTokenAction(
@@ -303,6 +306,7 @@ export default function WorkspacePage() {
                       <PhoneCall />
                       Call
                     </Button>
+                    <PriorityReview token={token} hospital={institution?.type?.trim().toLowerCase() === "hospital"} disabled={busyAction !== null} onDone={reload} />
                   </CardContent>
                 </Card>
               </li>

@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuthStore } from "@/store/auth";
 import { homeFor } from "@/lib/navigation";
+import { WhatsAppEntry } from "@/components/whatsapp-entry";
 
 const FEATURES = [
   {
@@ -138,21 +139,7 @@ export default function Home() {
                 Get a token
                 <ArrowRight />
               </Button>
-              {accessToken ? (
-                <Button size="lg" variant="outline" render={<Link href={home} />}>
-                  <LayoutDashboard />
-                  Institution dashboard
-                </Button>
-              ) : (
-                <>
-                  <Button size="lg" variant="outline" render={<Link href="/login" />}>
-                    Institution sign in
-                  </Button>
-                  <Button size="lg" variant="ghost" render={<Link href="/register" />}>
-                    Register your institution
-                  </Button>
-                </>
-              )}
+              <WhatsAppEntry />
             </div>
             <p className="text-xs text-muted-foreground/70">
               No app needed · Works on any phone · WhatsApp where supported

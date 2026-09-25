@@ -18,6 +18,24 @@ function respond(items: unknown[], has_more = false) {
 }
 
 describe('phone-scoped status', () => {
+  it.each(['pending', 'approved', 'rejected', 'normal'])('shows safe %s priority status from the server', async priority_review => {
+    respond([{ ...ticket, priority_review, requested_priority: 'accessibility', effective_priority: priority_review === 'approved' ? 'accessibility' : 'normal', priority_reason: 'disability', customer_cnic: '0000000000001' }]);
+    await startCheckStatusFlow(session.phone);
+    const output = client.sendText.mock.calls[0][1];
+    expect(output).toContain(priority_review === 'normal' ? 'returned to normal' : priority_review);
+    expect(output).not.toMatch(/disability|0000000000001/);
+    expect(output).toContain('Effective priority:');
+  });
+  it('retrieves a website-issued copy without creating another token or sending to its stored recipient', async () => {
+    respond([{ ...ticket, customer_phone: '19999999999' }]);
+    await startCheckStatusFlow(session.phone);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toContain('/internal/bot/tokens/lookup');
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).phone).toBe(session.phone);
+    expect(client.sendText).toHaveBeenCalledTimes(1);
+    expect(client.sendText.mock.calls[0][0]).toBe(session.phone);
+    expect(client.sendText.mock.calls[0][1]).toContain('Token: GEN-0042');
+  });
   it('auto-displays a single existing token with position and zero wait', async () => {
     respond([ticket]);
     await startCheckStatusFlow(session.phone);

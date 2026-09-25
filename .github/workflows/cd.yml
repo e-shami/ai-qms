@@ -1,0 +1,16 @@
+name: Legacy Oracle Deployment (Disabled)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  legacy-notice:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "Oracle deployment is retired. This workflow does not deploy anything."
+          echo "Use Render and Vercel native Git integrations; see deployment/README.md."
+          echo "Legacy Compose requires manually built images and an operator-reviewed deployment."

@@ -5,6 +5,8 @@
 !LICENSE
 !LICENSE.md
 !LICENSE.MD
+!memory.md
+!phases.md
 
 # --- Environment & secrets ---
 .env
@@ -45,4 +47,5 @@ Thumbs.db
 
 docker-compose.prod.yml
 scripts/
-.github/
+.github/*
+!.github/workflows/

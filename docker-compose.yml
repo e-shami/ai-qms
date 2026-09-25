@@ -23,6 +23,13 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://aiqms:aiqms@db:5432/aiqms}
       CORS_ORIGINS: ${CORS_ORIGINS:-["http://localhost:3000"]}
       INTERNAL_API_KEY: ${INTERNAL_API_KEY}
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY for backend JWT signing}
+      WHATSAPP_TOKEN: ${WHATSAPP_TOKEN:-}
+      PHONE_NUMBER_ID: ${PHONE_NUMBER_ID:-}
+      WHATSAPP_API_VERSION: ${WHATSAPP_API_VERSION:-v23.0}
+      WHATSAPP_COPY_TEMPLATE: ${WHATSAPP_COPY_TEMPLATE:-}
+      WHATSAPP_COPY_LANGUAGE: ${WHATSAPP_COPY_LANGUAGE:-}
+      WHATSAPP_BOT_NUMBER: ${WHATSAPP_BOT_NUMBER:-}
     ports:
       - "8000:8000"
     depends_on:
@@ -30,7 +37,12 @@ services:
         condition: service_healthy
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_WHATSAPP_NUMBER: ${WHATSAPP_BOT_NUMBER:-}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000/api/v1}
+        NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost:8000/ws}
     restart: unless-stopped
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000/api/v1}
@@ -72,6 +84,7 @@ services:
       - backend
 
   cv-service:
+    profiles: [cv]
     build: ./cv-service
     restart: unless-stopped
     environment:

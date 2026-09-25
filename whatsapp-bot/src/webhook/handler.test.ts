@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Request, Response } from 'express';
 
-vi.mock('../whatsapp/session', () => ({
+vi.mock('../whatsapp/session', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../whatsapp/session')>(),
   getSession: vi.fn(),
   updateSession: vi.fn(),
   resetSession: vi.fn(),
@@ -20,7 +21,7 @@ const client = vi.hoisted(() => ({
   markAsRead: vi.fn(), sendText: vi.fn(), sendInteractiveButtons: vi.fn(),
 }));
 
-import { getSession, updateSession, resetSession } from '../whatsapp/session';
+import { getSession, updateSession, resetSession, clearedIntake } from '../whatsapp/session';
 import { processCheckStatusFlow, startCheckStatusFlow } from '../flows/checkStatus';
 import { handleWebhook } from './handler';
 
@@ -53,7 +54,7 @@ describe('global menu navigation', () => {
     ('exits status entry for %s without clearing token data', async (command) => {
       await send(command);
       expect(updateSession).toHaveBeenCalledWith('15551234567', {
-        state: 'idle', data: { flow: undefined, step: undefined, awaitingHuman: undefined },
+        state: 'idle', data: { ...clearedIntake, flow: undefined, step: undefined, awaitingHuman: undefined },
       });
       expect(resetSession).not.toHaveBeenCalled();
       expect(client.sendInteractiveButtons).toHaveBeenCalled();
@@ -64,6 +65,29 @@ describe('global menu navigation', () => {
     await send('GEN-0042');
     expect(processCheckStatusFlow).toHaveBeenCalled();
     expect(client.sendInteractiveButtons).not.toHaveBeenCalled();
+  });
+  it.each(['menu', 'status', 'support'])('clears sensitive unfinished intake on %s without deleting saved tokens', async (command) => {
+    vi.mocked(getSession).mockResolvedValue({
+      phone: '15551234567', state: 'awaiting_intake', createdAt: 0, updatedAt: 0,
+      data: { step: 9, customerName: 'Private Customer', customerCnic: '0123456789012', reuseIntake: true, profileRef: 73, profileInstitutionId: '1', tokenNumber: 'GEN-0042' },
+    });
+    await send(command);
+    const data = vi.mocked(updateSession).mock.calls[0][1].data!;
+    expect(data).toMatchObject(clearedIntake);
+    expect(Object.hasOwn(data, 'customerCnic')).toBe(true);
+    expect(Object.hasOwn(data, 'profileRef')).toBe(true);
+    expect(data.profileRef).toBeUndefined();
+    expect(data.profileInstitutionId).toBeUndefined();
+    expect(Object.hasOwn(data, 'tokenNumber')).toBe(false);
+    expect(resetSession).not.toHaveBeenCalled();
+  });
+  it('routes the new intake state to priority handling', async () => {
+    vi.mocked(getSession).mockResolvedValue({
+      phone: '15551234567', state: 'awaiting_intake', createdAt: 0, updatedAt: 0,
+      data: { step: 9, institutionType: 'hospital' },
+    });
+    await send('priority_elderly', true);
+    expect(updateSession).toHaveBeenCalledWith('15551234567', { data: { priorityReason: 'elderly', step: 3 } });
   });
 
   it('looks up existing tokens even with no saved chat token', async () => {

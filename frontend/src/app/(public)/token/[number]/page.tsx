@@ -6,6 +6,7 @@ import { Copy, Printer, RefreshCw } from "lucide-react";
 import toast from "react-hot-toast";
 
 import { Button } from "@/components/ui/button";
+import { PublicPriority } from "@/components/tokens/public-priority";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TokenStatusBadge, formatDateTime } from "@/components/ui/status";
@@ -119,6 +120,7 @@ export default function TicketPage() {
           </div>
         </CardHeader>
         <CardContent className="space-y-4 pt-6">
+          <PublicPriority ticket={ticket} />
           <div className="grid grid-cols-3 gap-3 rounded-lg border bg-muted/40 p-4 text-center">
             <div>
               <p className="text-xs text-muted-foreground">Position</p>

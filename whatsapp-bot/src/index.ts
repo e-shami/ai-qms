@@ -43,7 +43,7 @@ const cleanupInterval = setInterval(async () => {
       console.log(`🧹 Cleaned ${cleaned} expired sessions`);
     }
   } catch (error) {
-    console.error('Session cleanup failed:', error);
+    console.error('Session cleanup failed');
   }
 }, env.SESSION_CLEANUP_INTERVAL_MS);
 

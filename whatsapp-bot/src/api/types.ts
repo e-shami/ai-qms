@@ -12,6 +12,9 @@ export interface CounterPublic {
 }
 
 export interface TokenPublic {
+  requested_priority: 'normal' | 'accessibility';
+  effective_priority: 'normal' | 'accessibility';
+  priority_review: 'not_requested' | 'pending' | 'approved' | 'rejected' | 'normal';
   token_number: string;
   status: 'waiting' | 'called' | 'in_service' | 'served' | 'no_show' | 'declined';
   counter_id: number;

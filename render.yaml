@@ -1,0 +1,67 @@
+# Deploy only after configuring accounts and secrets in deployment/README.md.
+services:
+  - type: web
+    name: ai-qms-backend
+    runtime: docker
+    plan: free
+    branch: main
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /health
+    autoDeployTrigger: checksPass
+    buildFilter:
+      paths: [backend/**, render.yaml]
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
+        sync: false
+      - key: INTERNAL_API_KEY
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: WHATSAPP_TOKEN
+        sync: false
+      - key: PHONE_NUMBER_ID
+        sync: false
+      - key: WHATSAPP_BOT_NUMBER
+        sync: false
+      - key: WHATSAPP_API_VERSION
+        value: v23.0
+
+  - type: web
+    name: ai-qms-whatsapp-bot
+    runtime: docker
+    plan: free
+    branch: main
+    dockerfilePath: ./whatsapp-bot/Dockerfile
+    dockerContext: ./whatsapp-bot
+    healthCheckPath: /health
+    autoDeployTrigger: checksPass
+    buildFilter:
+      paths: [whatsapp-bot/**, render.yaml]
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: '10000'
+      - key: BACKEND_API_URL
+        sync: false
+      - key: PUBLIC_WEB_URL
+        sync: false
+      - key: INTERNAL_API_KEY
+        sync: false
+      - key: WHATSAPP_TOKEN
+        sync: false
+      - key: PHONE_NUMBER_ID
+        sync: false
+      - key: WEBHOOK_VERIFY_TOKEN
+        sync: false
+      - key: WHATSAPP_APP_SECRET
+        sync: false
+      - key: UPSTASH_REDIS_REST_URL
+        sync: false
+      - key: UPSTASH_REDIS_REST_TOKEN
+        sync: false
+      - key: WHATSAPP_API_VERSION
+        value: v23.0

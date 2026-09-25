@@ -1,17 +1,21 @@
-"""Wait-time prediction service.
+"""Validated shadow inference; live estimates remain empirical/heuristic.
 
-Wraps the promoted model artifact (Random Forest primary) with input
-validation and a rule-of-thumb fallback (peak-table mean) so prediction
-never crashes the request — per rules.md error-handling baseline.
+The historical packaged RF has an incompatible post-service feature and is
+rejected. The legacy numeric interface retains its historical peak fallback.
 """
 from __future__ import annotations
 
 import json
+import logging
+import warnings
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 import joblib
 import numpy as np
 import pandas as pd
+from sklearn.exceptions import InconsistentVersionWarning
 
 MODELS_DIR = Path(__file__).resolve().parent / "models"
 FEATURE_META = MODELS_DIR / "feature_meta.json"
@@ -21,6 +25,17 @@ PEAK_TABLE = MODELS_DIR / "peak_table.csv"
 HOUR_MIN, HOUR_MAX = 0, 23
 DOW_MIN, DOW_MAX = 0, 6
 QUEUE_LENGTH_MAX = 200.0
+NUMERIC_FEATURES = [
+    "institution_id", "counter_id", "queue_length_at_arrival",
+    "hour_of_day", "day_of_week", "is_weekend",
+]
+logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class ModelEstimate:
+    estimate_min: float | None
+    status: Literal["shadow", "unavailable", "invalid_contract", "invalid_input", "unknown_service", "inference_failed"]
 
 
 class Predictor:
@@ -41,7 +56,9 @@ class Predictor:
     def _load_model(self):
         if self._model is None:
             try:
-                self._model = joblib.load(MODEL_FILE)
+                with warnings.catch_warnings():
+                    warnings.simplefilter("error", InconsistentVersionWarning)
+                    self._model = joblib.load(MODEL_FILE)
             except FileNotFoundError:
                 self._model = None
         return self._model
@@ -72,13 +89,67 @@ class Predictor:
         is_weekend: bool,
         queue_length_at_arrival: float,
     ) -> float:
-        """Estimate wait time in minutes; falls back to a rule-of-thumb."""
+        """Legacy numeric interface; not a live customer estimate."""
+        result = self.evaluate(
+            institution_id=institution_id, counter_id=counter_id,
+            service_type=service_type, hour_of_day=hour_of_day,
+            day_of_week=day_of_week, is_weekend=is_weekend,
+            queue_length_at_arrival=queue_length_at_arrival,
+        )
+        return result.estimate_min if result.estimate_min is not None else self.fallback(hour_of_day, day_of_week)
+
+    def evaluate(
+        self, *, institution_id: int, counter_id: int, service_type: str | None,
+        hour_of_day: int, day_of_week: int, is_weekend: bool,
+        queue_length_at_arrival: float,
+    ) -> ModelEstimate:
+        """Shadow inference only. Numeric training IDs have no live tenant mapping.
+
+        Load only operator-controlled, packaged joblib files: pickle is executable
+        code, not a safe format for uploads or externally supplied model paths.
+        Missing/invalid models never masquerade as successful ML predictions.
+        """
         try:
             meta = self._load_meta()
+        except Exception:
+            return ModelEstimate(None, "unavailable")
+        try:
+            services = meta["service_columns"]
+            if (
+                meta["version"] not in (1, 2)
+                or meta["target"] != "wait_time_min"
+                or meta["numeric_features"] != NUMERIC_FEATURES
+                or meta["features"] != NUMERIC_FEATURES + services
+                or len(set(meta["features"])) != len(meta["features"])
+                or any(not isinstance(c, str) or not c.startswith("service_") or c in {
+                    "service_time_min", "service_start_ts", "service_end_ts", "service_type",
+                } for c in services)
+                or not 0 <= float(meta["min_wait"]) < float(meta["max_wait"]) <= 240
+            ):
+                return ModelEstimate(None, "invalid_contract")
+        except (KeyError, TypeError, ValueError):
+            return ModelEstimate(None, "invalid_contract")
+        try:
+            values = [institution_id, counter_id, queue_length_at_arrival, hour_of_day, day_of_week]
+            if (
+                not all(np.isfinite(v) for v in values)
+                or institution_id <= 0 or counter_id <= 0
+                or not 0 <= queue_length_at_arrival <= QUEUE_LENGTH_MAX
+                or not 0 <= hour_of_day <= 23 or int(hour_of_day) != hour_of_day
+                or not 0 <= day_of_week <= 6 or int(day_of_week) != day_of_week
+                or is_weekend != (day_of_week >= 5)
+            ):
+                return ModelEstimate(None, "invalid_input")
+        except (TypeError, ValueError):
+            return ModelEstimate(None, "invalid_input")
+        if not service_type or f"service_{service_type}" not in services:
+            return ModelEstimate(None, "unknown_service")
+        try:
             model = self._load_model()
             if model is None:
-                return self.fallback(hour_of_day, day_of_week)
-            features = meta["features"]
+                return ModelEstimate(None, "unavailable")
+            if model.n_features_in_ != len(meta["features"]):
+                return ModelEstimate(None, "invalid_contract")
             row = self._build_row(
                 meta,
                 institution_id=institution_id,
@@ -91,10 +162,11 @@ class Predictor:
             )
             pred = float(model.predict(np.asarray([row], dtype=float))[0])
             if not np.isfinite(pred):
-                return self.fallback(hour_of_day, day_of_week)
-            return round(float(np.clip(pred, meta["min_wait"], meta["max_wait"])), 1)
+                return ModelEstimate(None, "inference_failed")
+            return ModelEstimate(round(float(np.clip(pred, meta["min_wait"], meta["max_wait"])), 1), "shadow")
         except Exception:
-            return self.fallback(hour_of_day, day_of_week)
+            logger.warning("Wait-time model inference failed; live estimator unaffected")
+            return ModelEstimate(None, "inference_failed")
 
     def fallback(self, hour_of_day: int, day_of_week: int) -> float:
         """Rule-of-thumb estimate: peak-table bucket mean, else overall mean."""
@@ -126,7 +198,7 @@ class Predictor:
         queue_length_at_arrival: float,
     ) -> list[float]:
         service_cols: list[str] = meta["service_columns"]
-        service_row = [1.0 if service_type == name[8:] else 0.0 for name in service_cols]
+        service_row = [1.0 if service_type == name.removeprefix("service_") else 0.0 for name in service_cols]
         return [
             float(institution_id),
             float(counter_id),

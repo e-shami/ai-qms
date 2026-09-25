@@ -6,6 +6,7 @@ import toast from "react-hot-toast";
 
 import { IssueTokenForm } from "@/components/tokens/issue-token-form";
 import { TokenActions } from "@/components/tokens/token-actions";
+import { PriorityReview } from "@/components/tokens/priority-review";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,7 +27,7 @@ import {
   TokenStatusBadge,
   TOKEN_STATUS_LABELS,
 } from "@/components/ui/status";
-import { useCounters, useTokens } from "@/hooks/use-resources";
+import { useCounters, useInstitution, useTokens } from "@/hooks/use-resources";
 import { dateRangeSchema } from "@/lib/validators";
 import type { TokenStatus } from "@/types";
 
@@ -51,6 +52,7 @@ function dayBoundary(value: string, endOfDay: boolean = false): string | undefin
 
 export default function TokensPage() {
   const { counters } = useCounters();
+  const { institution } = useInstitution();
   const [counterFilter, setCounterFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState<TokenStatus | "all">("all");
   const [fromDate, setFromDate] = useState("");
@@ -241,6 +243,7 @@ export default function TokensPage() {
                         </TableCell>
                         <TableCell>
                           <TokenStatusBadge status={token.status} />
+                          <PriorityReview token={token} hospital={institution?.type?.trim().toLowerCase() === "hospital"} onDone={reload} />
                         </TableCell>
                         <TableCell className="text-muted-foreground">
                           {formatDateTime(token.issued_at)}

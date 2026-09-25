@@ -59,7 +59,22 @@ export interface Personnel {
   created_at: string;
 }
 
+export type Priority = "normal" | "accessibility";
+export type PriorityReason = "elderly" | "disability";
+export type ReferralSource = "website" | "institution" | "other";
+export interface IntakePayload {
+  customer_cnic: string | null;
+  referral_source: ReferralSource | null;
+  referral_organization: string | null;
+  requested_priority: Priority;
+  priority_reason: PriorityReason | null;
+}
+
 export interface Token {
+  requested_priority: Priority;
+  effective_priority: Priority;
+  priority_reason: PriorityReason | null;
+  priority_review: "not_requested" | "pending" | "approved" | "rejected" | "normal";
   id: number;
   token_number: string;
   customer_name: string | null;
@@ -248,6 +263,9 @@ export interface PublicCounter {
 }
 
 export interface PublicTicket {
+  requested_priority: "normal" | "accessibility";
+  effective_priority: "normal" | "accessibility";
+  priority_review: "not_requested" | "pending" | "approved" | "rejected" | "normal";
   token_number: string;
   status: TokenStatus;
   counter_id: number;
@@ -264,6 +282,11 @@ export interface WaitPrediction {
   counter_id: number;
   queue_ahead: number;
   estimated_wait_min: number;
+  method: "empirical" | "heuristic";
+  avg_service_min: number | null;
+  ml_estimate_min: number | null;
+  ml_status: "shadow" | "unavailable" | "invalid_contract" | "invalid_input" | "unknown_service" | "inference_failed";
+  ml_mode: "shadow_only";
 }
 
 export interface HourlyCount {

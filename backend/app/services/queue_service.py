@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import NamedTuple, Sequence
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, or_, select
+from sqlalchemy import case, select
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -84,18 +84,31 @@ def _require_status(token: Token, *expected: TokenStatus) -> None:
         )
 
 
-def token_position(db: Session, token: Token) -> int:
-    ahead = db.execute(
-        select(func.count(Token.id)).where(
-            Token.counter_id == token.counter_id,
-            Token.status.in_(NON_TERMINAL_STATUSES),
-            or_(
-                Token.issued_at < token.issued_at,
-                (Token.issued_at == token.issued_at) & (Token.id < token.id),
-            ),
-        )
-    ).scalar_one()
-    return ahead + 1
+def token_position(db: Session, token: Token) -> int | None:
+    ids = db.scalars(select(Token.id).where(
+        Token.institution_id == token.institution_id, Token.counter_id == token.counter_id,
+        Token.status.in_(NON_TERMINAL_STATUSES),
+    ).order_by(*queue_order())).all()
+    try:
+        return ids.index(token.id) + 1
+    except ValueError:
+        # A concurrent terminal transition can remove a previously active token.
+        db.refresh(token)
+        return None
+
+
+def queue_order():
+    """Active work first, then approved accessibility, FIFO within each band."""
+    return (case((Token.status != TokenStatus.WAITING, 0), else_=1),
+            case(((Token.status == TokenStatus.WAITING) &
+                  (Token.effective_priority == "accessibility"), 0), else_=1),
+            Token.issued_at, Token.id)
+
+
+def lock_counter(db: Session, token: Token) -> None:
+    db.execute(select(Counter).where(Counter.id == token.counter_id,
+        Counter.institution_id == token.institution_id).with_for_update()).scalar_one()
+    db.refresh(token)
 
 
 def token_out(db: Session, token: Token) -> TokenOut:
@@ -112,7 +125,14 @@ def resolve_personnel_link(db: Session, token: Token, user) -> None:
 
 
 def call_token(db: Session, token: Token, user=None) -> None:
+    lock_counter(db, token)
     _require_status(token, TokenStatus.WAITING)
+    first = db.scalars(select(Token).where(
+        Token.institution_id == token.institution_id, Token.counter_id == token.counter_id,
+        Token.status.in_(NON_TERMINAL_STATUSES),
+    ).order_by(*queue_order()).limit(1)).first()
+    if first is None or first.id != token.id:
+        raise HTTPException(status_code=409, detail="Finish active service and call the next waiting token in queue order")
     token.status = TokenStatus.CALLED
     token.called_at = utcnow()
     if user is not None:
@@ -121,14 +141,18 @@ def call_token(db: Session, token: Token, user=None) -> None:
     db.refresh(token)
 
 
-def start_service(db: Session, token: Token) -> None:
+def start_service(db: Session, token: Token, user=None) -> None:
+    lock_counter(db, token)
     _require_status(token, TokenStatus.CALLED)
+    if user is not None:
+        resolve_personnel_link(db, token, user)
     token.status = TokenStatus.IN_SERVICE
     db.commit()
     db.refresh(token)
 
 
 def complete_token(db: Session, token: Token) -> None:
+    lock_counter(db, token)
     _require_status(token, TokenStatus.IN_SERVICE)
     token.status = TokenStatus.SERVED
     token.completed_at = utcnow()
@@ -137,6 +161,7 @@ def complete_token(db: Session, token: Token) -> None:
 
 
 def mark_no_show(db: Session, token: Token) -> None:
+    lock_counter(db, token)
     _require_status(token, TokenStatus.WAITING, TokenStatus.CALLED)
     token.status = TokenStatus.NO_SHOW
     token.completed_at = utcnow()
@@ -145,6 +170,7 @@ def mark_no_show(db: Session, token: Token) -> None:
 
 
 def decline_token(db: Session, token: Token, reason: str) -> None:
+    lock_counter(db, token)
     _require_status(token, TokenStatus.WAITING, TokenStatus.CALLED, TokenStatus.IN_SERVICE)
     token.status = TokenStatus.DECLINED
     token.decline_reason = reason
@@ -180,8 +206,8 @@ def snapshot(
         tokens = (
             db.execute(
                 select(Token)
-                .where(Token.counter_id == counter.id, Token.status.in_(NON_TERMINAL_STATUSES))
-                .order_by(Token.issued_at, Token.id)
+                .where(Token.institution_id == institution_id, Token.counter_id == counter.id, Token.status.in_(NON_TERMINAL_STATUSES))
+                .order_by(*queue_order())
             )
             .scalars()
             .all()

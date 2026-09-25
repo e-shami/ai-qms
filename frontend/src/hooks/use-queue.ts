@@ -9,7 +9,7 @@ import type { QueueSnapshot } from "@/types";
 
 /** Live queue snapshot: initial fetch, WebSocket updates, polling fallback. */
 export function useQueue() {
-  const [snapshot, setSnapshot] = useState<QueueSnapshot | null>(null);
+  const [entry, setEntry] = useState<{ session: string; snapshot: QueueSnapshot } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   // Read the socket's current state at mount — a component mounting after the
@@ -20,20 +20,23 @@ export function useQueue() {
   const accessToken = useAuthStore((state) => state.accessToken);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const mountedRef = useRef(true);
+  const requestIdRef = useRef(0);
   const prevTokenRef = useRef<string | null>(accessToken);
 
   const fetchSnapshot = useCallback(async () => {
-    if (!useAuthStore.getState().accessToken) return;
+    const session = useAuthStore.getState().accessToken;
+    if (!session) return;
+    const requestId = ++requestIdRef.current;
     try {
       const data = await api.get<QueueSnapshot>("/queue");
-      if (mountedRef.current) {
-        setSnapshot(data);
+      if (mountedRef.current && requestId === requestIdRef.current && session === useAuthStore.getState().accessToken) {
+        setEntry({ session, snapshot: data });
         setError(null);
       }
     } catch (err) {
-      if (mountedRef.current && err instanceof Error) setError(err.message);
+      if (mountedRef.current && requestId === requestIdRef.current && session === useAuthStore.getState().accessToken && err instanceof Error) setError(err.message);
     } finally {
-      if (mountedRef.current) setLoading(false);
+      if (mountedRef.current && requestId === requestIdRef.current) setLoading(false);
     }
   }, []);
 
@@ -47,6 +50,7 @@ export function useQueue() {
 
   useEffect(() => {
     mountedRef.current = true;
+    requestIdRef.current += 1;
     if (!accessToken) return;
 
     // Initial load — otherwise the first data arrives only at the first poll
@@ -55,10 +59,19 @@ export function useQueue() {
     const kickoff = setTimeout(() => void fetchSnapshot(), 0);
     queueSocket.connect();
     const unsubscribe = queueSocket.subscribe((data) => {
-      setSnapshot(data);
+      const user = useAuthStore.getState().user;
+      if (useAuthStore.getState().accessToken !== accessToken || !user || data.institution_id !== user.institution_id) return;
+      // A live frame supersedes any GET started before this queue mutation.
+      requestIdRef.current += 1;
+      setEntry((previous) => previous?.session === accessToken && previous.snapshot.updated_at > data.updated_at
+        ? previous : { session: accessToken, snapshot: data });
       setError(null);
+      setLoading(false);
     });
-    const unsubscribeState = queueSocket.subscribeState(setConnected);
+    const unsubscribeState = queueSocket.subscribeState((next) => {
+      setConnected(next);
+      if (next) void fetchSnapshot();
+    });
     // WebSocket delivers updates; poll as a fallback if the socket is down.
     pollRef.current = setInterval(() => fetchSnapshot(), 30000);
 
@@ -73,8 +86,9 @@ export function useQueue() {
 
   const reload = useCallback(() => {
     setLoading(true);
-    fetchSnapshot().finally(() => setLoading(false));
+    return fetchSnapshot();
   }, [fetchSnapshot]);
 
+  const snapshot = accessToken && entry?.session === accessToken ? entry.snapshot : null;
   return { snapshot, loading, error, connected, reload };
 }

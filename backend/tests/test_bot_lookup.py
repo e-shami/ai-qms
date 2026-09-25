@@ -2,6 +2,7 @@
 import os
 import re
 import unittest
+from unittest.mock import patch
 from datetime import datetime, timezone
 
 os.environ["DATABASE_URL"] = "sqlite://"
@@ -15,12 +16,16 @@ from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from app.api.v1.bot import router
+from app.config import settings
 from app.database import Base, get_db
 from app.models import Counter, Institution, Token, TokenStatus
 
 
 class BotLookupTests(unittest.TestCase):
     def setUp(self):
+        key_patch = patch.object(settings, "INTERNAL_API_KEY", "bot-test-key")
+        key_patch.start()
+        self.addCleanup(key_patch.stop)
         self.engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
 
         @event.listens_for(self.engine, "connect")

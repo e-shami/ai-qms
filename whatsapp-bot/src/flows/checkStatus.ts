@@ -3,6 +3,7 @@ import { getWhatsAppClient } from '../whatsapp/client';
 import { getEnv } from '../config';
 import { WhatsAppMessage } from '../whatsapp/types';
 import { BotTicket } from '../api/types';
+import { priorityStatus } from '../api/priority';
 
 export async function startCheckStatusFlow(phone: string, offset = 0, tokenNumber?: string, tokenId?: number): Promise<void> {
   const client = getWhatsAppClient();
@@ -29,6 +30,7 @@ export async function startCheckStatusFlow(phone: string, offset = 0, tokenNumbe
       await client.sendText(phone,
         `Token: ${token.token_number}\nInstitution: ${token.institution_name}\n` +
         `Counter: ${token.counter_name}\nStatus: ${token.status.replace(/_/g, ' ').toUpperCase()}\n` +
+        `${priorityStatus(token)}\n` +
         `Position: ${token.position ?? 'N/A'}\nEstimated wait: ${token.estimated_wait_min == null ? 'N/A' : `${token.estimated_wait_min} min`}\n` +
         `Issued: ${new Date(token.issued_at).toLocaleString()}\n\n` +
         (webUrl ? `Track: ${webUrl.replace(/\/$/, '')}/token/${encodeURIComponent(token.token_number)}?institution=${token.institution_id}\n\n` : '') +

@@ -1,0 +1,27 @@
+{
+  "profile": { "available": true, "profile_ref": 73 },
+  "ticket": {
+    "token_number": "GEN-0001",
+    "status": "waiting",
+    "counter_id": 2,
+    "counter_name": "General",
+    "position": 1,
+    "people_ahead": 0,
+    "estimated_wait_min": 0,
+    "issued_at": "2026-09-24T10:00:00Z",
+    "called_at": null,
+    "completed_at": null,
+    "requested_priority": "normal",
+    "effective_priority": "normal",
+    "priority_review": "not_requested"
+  },
+  "reuse": {
+    "institution_id": "1",
+    "counter_id": "2",
+    "customer_phone": "15551234567",
+    "requested_priority": "normal",
+    "phone": "15551234567",
+    "confirm_same_person": true,
+    "profile_ref": 73
+  }
+}

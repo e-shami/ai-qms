@@ -3,6 +3,8 @@
 Institutions opt in to public visibility by being `is_active`; only
 active counters are listed. Token lookups return PII-free tickets.
 """
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -14,6 +16,7 @@ from app.schemas.institution import PublicInstitutionOut
 from app.schemas.token import PublicTokenIssue, PublicTicketOut
 from app.services import token_service
 from app.services.broadcast import broadcast_queue
+from app.services.token_copy import notify_token_copy
 from app.utils.rate_limit import public_issue_limiter, public_lookup_limiter
 
 router = APIRouter(prefix="/public", tags=["public"])
@@ -83,16 +86,27 @@ async def issue_public_token(
     ):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Counter not found")
 
-    token, position = token_service.issue_token(
+    token, _position = token_service.issue_token(
         db,
         institution_id=institution.id,
         counter_id=counter.id,
         customer_name=payload.customer_name,
         customer_phone=payload.customer_phone,
+        customer_cnic=payload.customer_cnic,
+        referral_source=payload.referral_source,
+        referral_organization=payload.referral_organization,
+        requested_priority=payload.requested_priority,
+        priority_reason=payload.priority_reason,
     )
-    await broadcast_queue(db, institution.id)
+    try:
+        await broadcast_queue(db, institution.id)
+    except Exception:
+        logging.getLogger(__name__).warning("Queue broadcast failed after public token issuance")
     ticket = token_service.build_public_ticket(db, token)
-    ticket.position = position
+    ticket.notification = notify_token_copy(
+        consent=payload.whatsapp_copy, public=True, phone=token.customer_phone,
+        token_number=token.token_number, counter_name=counter.name,
+    )
     return ticket
 
 

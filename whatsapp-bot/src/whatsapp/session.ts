@@ -6,6 +6,7 @@ export type SessionState =
   | 'idle'
   | 'awaiting_institution'
   | 'awaiting_counter'
+  | 'awaiting_intake'
   | 'awaiting_name'
   | 'awaiting_confirmation'
   | 'in_queue'
@@ -26,6 +27,14 @@ export interface SessionData {
   counterName?: string;
   counterPrefix?: string;
   customerName?: string;
+  customerCnic?: string;
+  referralSource?: 'website' | 'institution' | 'other';
+  referralOrganization?: string;
+  institutionType?: string;
+  reuseIntake?: boolean;
+  profileRef?: number;
+  profileInstitutionId?: string;
+  priorityReason?: 'elderly' | 'disability';
   tokenNumber?: string;
   tokenId?: string;
   lastMessageId?: string;
@@ -162,3 +171,10 @@ export function getTextBody(message: WhatsAppMessage): string | null {
   if (isInteractiveButtonReply(message)) return message.interactive.button_reply.id;
   return null;
 }
+
+export const clearedIntake: Partial<SessionData> = {
+  customerName: undefined, customerCnic: undefined, referralSource: undefined,
+  referralOrganization: undefined, reuseIntake: undefined, priorityReason: undefined,
+  profileRef: undefined, profileInstitutionId: undefined,
+  institutionType: undefined, listRows: undefined, listPage: undefined,
+};

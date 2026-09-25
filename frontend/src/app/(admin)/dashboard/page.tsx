@@ -19,6 +19,9 @@ import { StatusDot } from "@/components/ui/status-dot";
 import { StatusLabel } from "@/components/ui/status-dot";
 import type { StatusTone } from "@/components/ui/status-dot";
 import { useAdminOverview } from "@/hooks/use-overview";
+import { useQueue } from "@/hooks/use-queue";
+import { useInstitution } from "@/hooks/use-resources";
+import { PriorityReview } from "@/components/tokens/priority-review";
 import type { CounterBoardEntry, PresenceEntry } from "@/types";
 
 function presenceTone(entry: PresenceEntry): StatusTone {
@@ -96,6 +99,9 @@ function CounterBoardCard({ entry }: { entry: CounterBoardEntry }) {
 
 export default function AdminDashboardPage() {
   const { overview, loading, error, reload } = useAdminOverview();
+  const { snapshot, reload: reloadQueue, error: queueError } = useQueue();
+  const { institution } = useInstitution();
+  const hospital = institution?.type?.trim().toLowerCase() === "hospital";
 
   const funnel = [
     { label: "Issued today", value: overview?.today.issued ?? 0 },
@@ -117,6 +123,18 @@ export default function AdminDashboardPage() {
         title="Dashboard"
         description="Live view of counters, staff presence, and today's queue."
       />
+      <section aria-label="Waiting queue order" className="grid gap-4 md:grid-cols-2">
+        {queueError && <p role="alert" className="text-sm text-destructive">{queueError}</p>}
+        {snapshot?.counters.map((queue) => <Card key={queue.counter.id}>
+          <CardHeader><CardTitle>{queue.counter.name}: waiting order</CardTitle>
+            <CardDescription>{hospital ? "Approved accessibility first, then normal; FIFO within each band. Active service is never interrupted." : "First in, first out. Active service is never interrupted."}</CardDescription></CardHeader>
+          <CardContent><ol className="space-y-3">
+            {queue.tokens.filter((token) => token.status === "waiting").map((token) => <li key={token.id}>
+              <p className="font-mono font-semibold">{token.position}. {token.token_number}</p><PriorityReview token={token} hospital={hospital} onDone={reloadQueue} />
+            </li>)}
+          </ol>{queue.waiting_count === 0 && <p className="text-sm text-muted-foreground">Nobody waiting.</p>}</CardContent>
+        </Card>)}
+      </section>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard label="Waiting now" value={overview?.live.waiting} icon={Clock3} loading={loading && !overview} />

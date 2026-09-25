@@ -6,7 +6,36 @@ import { Select as SelectPrimitive } from "@base-ui/react/select"
 import { cn } from "@/lib/utils"
 import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from "lucide-react"
 
-const Select = SelectPrimitive.Root
+function Select<Value, Multiple extends boolean | undefined = false>({
+  children,
+  items,
+  ...props
+}: SelectPrimitive.Root.Props<Value, Multiple>) {
+  // Item labels alone are for typeahead. Value needs a root-level map,
+  // including before the portalled options have ever mounted.
+  const labels: { value: unknown; label: React.ReactNode }[] = []
+  function collectItems(nodes: React.ReactNode) {
+    React.Children.forEach(nodes, (node) => {
+      if (!React.isValidElement<SelectPrimitive.Item.Props>(node)) return
+      if (node.type === SelectItem) {
+        labels.push({ value: node.props.value, label: node.props.label ?? node.props.children })
+      } else if (
+        node.type === SelectContent ||
+        node.type === SelectGroup ||
+        node.type === React.Fragment
+      ) {
+        collectItems(node.props.children)
+      }
+    })
+  }
+  if (items === undefined) collectItems(children)
+
+  return (
+    <SelectPrimitive.Root {...props} items={items ?? labels}>
+      {children}
+    </SelectPrimitive.Root>
+  )
+}
 
 function SelectGroup({ className, ...props }: SelectPrimitive.Group.Props) {
   return (

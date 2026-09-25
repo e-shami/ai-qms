@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import { API_BASE } from "@/lib/api-client";
-import type { PublicCounter, PublicInstitution, PublicTicket } from "@/types";
+import { API_BASE, apiErrorMessage } from "@/lib/api-client";
+import type { IntakePayload, ReferralSource, PublicCounter, PublicInstitution, PublicTicket } from "@/types";
 
 const TICKET_POLL_MS = 15000;
 
@@ -39,7 +39,8 @@ export function usePublicCounters(institutionId: number | null) {
   const [data, setData] = useState<{ institutionId: number; counters: PublicCounter[] } | null>(
     null
   );
-  const [error, setError] = useState<string | null>(null);
+  const [failure, setFailure] = useState<{ institutionId: number; message: string } | null>(null);
+  const error = failure?.institutionId === institutionId ? failure.message : null;
 
   // Loading is derived: we're loading whenever shown data isn't for the
   // currently selected institution (or there's nothing to show yet).
@@ -58,11 +59,11 @@ export function usePublicCounters(institutionId: number | null) {
       .then((counters) => {
         if (cancelled) return;
         setData({ institutionId, counters });
-        setError(null);
+        setFailure(null);
       })
       .catch((err) => {
         if (cancelled) return;
-        setError(err instanceof Error ? err.message : "Request failed");
+        setFailure({ institutionId, message: err instanceof Error ? err.message : "Request failed" });
       });
     return () => {
       cancelled = true;
@@ -113,18 +114,20 @@ export function useTicket(institutionId: number | null, tokenNumber: string | nu
   return { ticket, loading: !missingInput && ticket === null && error === null, error, reload: fetchTicket };
 }
 
-export async function issuePublicToken(payload: {
+export async function issuePublicToken(payload: IntakePayload & {
+  customer_cnic: string;
+  referral_source: ReferralSource;
   institution_id: number;
   counter_id: number;
   customer_name?: string | null;
   customer_phone?: string | null;
+  whatsapp_copy?: boolean;
 }): Promise<PublicTicket> {
   const res = await fetch(`${API_BASE}/public/tokens`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.detail ?? "Could not issue a token");
-  return body as PublicTicket;
+  if (!res.ok) throw new Error(await apiErrorMessage(res, "Could not issue a token"));
+  return await res.json() as PublicTicket;
 }

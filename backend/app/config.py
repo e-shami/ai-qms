@@ -28,6 +28,12 @@ class Settings(BaseSettings):
     PREDICT_DEFAULT_SERVICE_MIN: float = 5.0
     PREDICT_MIN_SERVICE_SAMPLES: int = 5
     INTERNAL_API_KEY: str = "your-internal-api-key-change-in-production"
+    WHATSAPP_TOKEN: str = ""
+    PHONE_NUMBER_ID: str = ""
+    WHATSAPP_API_VERSION: str = "v23.0"
+    WHATSAPP_COPY_TEMPLATE: str = ""
+    WHATSAPP_COPY_LANGUAGE: str = ""
+    WHATSAPP_BOT_NUMBER: str = ""
 
 
 settings = Settings()

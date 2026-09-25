@@ -139,7 +139,7 @@ class Optimizer:
         predicted = None
         try:
             if waiting > 0:
-                predicted = predictor.predict(
+                predicted = predictor.evaluate(
                     institution_id=institution_id,
                     counter_id=int(counter["id"]),
                     service_type=counter.get("type"),
@@ -147,7 +147,7 @@ class Optimizer:
                     day_of_week=day_of_week,
                     is_weekend=is_weekend,
                     queue_length_at_arrival=float(min(waiting, QUEUE_LENGTH_MAX)),
-                )
+                ).estimate_min
         except Exception:
             predicted = None
         return CounterAllocation(

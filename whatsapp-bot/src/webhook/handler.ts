@@ -7,6 +7,7 @@ import { processJoinQueueFlow, startJoinQueueFlow } from '../flows/joinQueue';
 import { processCheckStatusFlow, startCheckStatusFlow } from '../flows/checkStatus';
 import { processSupportFlow } from '../flows/support';
 import { showListPage } from '../whatsapp/lists';
+import { clearedIntake } from '../whatsapp/session';
 
 export async function handleWebhook(req: Request, res: Response): Promise<void> {
   const body = req.body as WhatsAppWebhookPayload;
@@ -42,13 +43,14 @@ async function processIncomingMessage(message: WhatsAppMessage): Promise<void> {
   await client.markAsRead(message.id).catch(() => undefined);
   const command = textBody?.trim().toLowerCase();
   if (command && ['hi', 'hello', 'hey', 'help', 'menu', 'restart', 'start over'].includes(command)) {
-    await updateSession(phone, { state: 'idle', data: { flow: undefined, step: undefined, awaitingHuman: undefined } });
+    await updateSession(phone, { state: 'idle', data: { ...clearedIntake, flow: undefined, step: undefined, awaitingHuman: undefined } });
     await client.sendInteractiveButtons(phone, 'AI-QMS Assistant', 'How can I help you today?', [
       { id: 'join', title: 'Join Queue' }, { id: 'status', title: 'Check Status' }, { id: 'support', title: 'Support' },
     ], 'Type "hi" or "menu" anytime to return here.');
     return;
   }
   if (command && ['status', 'check', 'my token', 'position', 'wait'].includes(command)) {
+    await updateSession(phone, { state: 'checking_status', data: { ...clearedIntake, flow: 'check_status', step: 2 } });
     await startCheckStatusFlow(phone);
     return;
   }
@@ -57,7 +59,7 @@ async function processIncomingMessage(message: WhatsAppMessage): Promise<void> {
     return;
   }
   if (command && ['support', 'agent'].includes(command)) {
-    await updateSession(phone, { state: 'support_escalated', data: { flow: 'support', step: undefined, awaitingHuman: false } });
+    await updateSession(phone, { state: 'support_escalated', data: { ...clearedIntake, flow: 'support', step: undefined, awaitingHuman: false } });
     await processSupportFlow(phone, session, null, { ...message, type: 'text', interactive: undefined });
     return;
   }
@@ -66,6 +68,7 @@ async function processIncomingMessage(message: WhatsAppMessage): Promise<void> {
     return;
   }
   if (/^[\p{L}\p{N}]{1,3}-\d{4,}$/u.test(textBody ?? '') && session.state !== 'checking_status') {
+    await updateSession(phone, { state: 'checking_status', data: { ...clearedIntake, flow: 'check_status', step: 2 } });
     await startCheckStatusFlow(phone, 0, textBody!.toUpperCase());
     return;
   }
@@ -76,6 +79,7 @@ async function processIncomingMessage(message: WhatsAppMessage): Promise<void> {
   switch (session.state) {
     case 'awaiting_institution':
     case 'awaiting_counter':
+    case 'awaiting_intake':
     case 'awaiting_name':
     case 'awaiting_confirmation':
       await processJoinQueueFlow(phone, session, textBody, message);

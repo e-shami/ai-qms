@@ -33,12 +33,12 @@ export function TokenActions({
     try {
       await api.post(`/tokens/${token.id}/${action}`);
       toast.success(`${token.token_number} ${ACTION_LABELS[action]}`);
-      onDone?.();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Action failed";
       onError?.(message);
       toast.error(message);
     } finally {
+      onDone?.();
       setBusy(null);
     }
   }
@@ -46,7 +46,7 @@ export function TokenActions({
   if (token.status === "waiting") {
     return (
       <div className="flex flex-wrap gap-1.5">
-        <Button size="xs" onClick={() => run("call")} disabled={busy !== null}>
+        <Button size="xs" onClick={() => run("call")} disabled={busy !== null || token.position !== 1}>
           Call
         </Button>
         <Button

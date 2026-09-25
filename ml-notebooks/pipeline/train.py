@@ -1,18 +1,9 @@
-"""Phase 5 — wait-time model training and promotion.
+"""Offline candidate training, NOT automatic deployment.
 
-Trains a tuned Random Forest against a LinearRegression baseline on the
-Phase 2 clean data, evaluates on a chronological split plus shuffled 5-fold
-CV, then promotes the winner and the runner-up into ``backend/app/ml/models/``.
-
-Empirical finding (2026-08-12): on the current noisy, self-reported,
-mixed-source dataset (5.8k rows) tuned Random Forest and the linear
-baseline are statistically indistinguishable (test RMSE 43.20 vs 43.30,
-5-fold CV RMSE 41.90 vs 41.71; R² ~0.12 for both — they explain only
-~12% of variance). Random Forest is promoted as the deployed model per
-architecture.md §2 (primary), with the linear baseline kept for the
-Step 6 comparison. Revisit both (or XGBoost/LightGBM) once real,
-less-noisy data arrives.
-XGBoost/LightGBM: skipped, 5.8k rows too small to justify (architecture.md §2).
+The historical artifacts included post-service duration by mistake. Their
+recorded metrics are not evidence for the corrected feature contract.
+Candidates retain numeric IDs for historical comparison only, not live use.
+Evaluate identity-free features and tenant-held-out performance before promotion.
 
 Run:  python -m pipeline.train   (from ml-notebooks/)
 """
@@ -28,11 +19,12 @@ import pandas as pd
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-from sklearn.model_selection import KFold, cross_val_score
+from sklearn.model_selection import TimeSeriesSplit, cross_val_score
 
 ROOT = Path(__file__).resolve().parents[2]
 CLEAN_CSV = ROOT / "ml-notebooks" / "data" / "processed" / "queue_events_clean.csv"
 MODELS_DIR = ROOT / "backend" / "app" / "ml" / "models"
+CANDIDATES_DIR = ROOT / "ml-notebooks" / "data" / "candidates"
 
 TARGET = "wait_time_min"
 NUMERIC_FEATURES = [
@@ -44,7 +36,6 @@ NUMERIC_FEATURES = [
     "is_weekend",
 ]
 SERVICE_COL_PREFIX = "service_"
-NON_ONEHOT_SERVICE_COLS = {"service_type", "service_start_ts", "service_end_ts"}
 
 RANDOM_STATE = 42
 TRAIN_FRACTION = 0.8
@@ -65,10 +56,12 @@ def load_clean() -> pd.DataFrame:
 
 
 def feature_columns(df: pd.DataFrame) -> tuple[list[str], list[str]]:
-    service_cols = sorted(
-        c for c in df.columns
-        if c.startswith(SERVICE_COL_PREFIX) and c not in NON_ONEHOT_SERVICE_COLS
-    )
+    # Only explicit categories, never prefix-matched post-outcome columns.
+    service_cols = sorted(SERVICE_COL_PREFIX + str(value) for value in df["service_type"].dropna().unique())
+    for column in service_cols:
+        expected = (df["service_type"] == column.removeprefix(SERVICE_COL_PREFIX)).astype(int)
+        if column not in df or not df[column].eq(expected).all():
+            raise ValueError(f"Invalid one-hot column: {column}")
     return NUMERIC_FEATURES + service_cols, service_cols
 
 
@@ -83,15 +76,13 @@ def evaluate(model, X_test: np.ndarray, y_test: np.ndarray) -> dict:
 
 def main() -> None:
     df = load_clean()
-    features, service_cols = feature_columns(df)
-    X = df[features].to_numpy(dtype=float)
-    y = df[TARGET].to_numpy(dtype=float)
-    n, n_features = X.shape
-
-    df_sorted = df.sort_values("arrival_ts")
+    df_sorted = df.sort_values("arrival_ts", kind="stable")
+    n = len(df_sorted)
+    split = int(TRAIN_FRACTION * n)
+    features, service_cols = feature_columns(df_sorted.iloc[:split])
+    n_features = len(features)
     X_sorted = df_sorted[features].to_numpy(dtype=float)
     y_sorted = df_sorted[TARGET].to_numpy(dtype=float)
-    split = int(TRAIN_FRACTION * n)
     X_train, X_test = X_sorted[:split], X_sorted[split:]
     y_train, y_test = y_sorted[:split], y_sorted[split:]
 
@@ -109,22 +100,23 @@ def main() -> None:
     print("test  RF(6/20) :", rf_test)
     print("test  LR       :", lr_test)
 
-    cv = KFold(n_splits=5, shuffle=True, random_state=RANDOM_STATE)
-    rf_cv = cross_val_score(rf, X, y, cv=cv, scoring="neg_root_mean_squared_error")
-    lr_cv = cross_val_score(lr, X, y, cv=cv, scoring="neg_root_mean_squared_error")
+    cv = TimeSeriesSplit(n_splits=5)
+    rf_cv = cross_val_score(rf, X_train, y_train, cv=cv, scoring="neg_root_mean_squared_error")
+    lr_cv = cross_val_score(lr, X_train, y_train, cv=cv, scoring="neg_root_mean_squared_error")
     rf_cv_rmse, lr_cv_rmse = -float(rf_cv.mean()), -float(lr_cv.mean())
-    print(f"5-fold CV RMSE  RF {rf_cv_rmse:.2f}  LR {lr_cv_rmse:.2f}")
+    print(f"Training-only temporal CV RMSE  RF {rf_cv_rmse:.2f}  LR {lr_cv_rmse:.2f}")
 
     winner = "random_forest" if rf_test["rmse_min"] <= lr_test["rmse_min"] else "linear"
     print(f"winner: {winner}")
 
-    MODELS_DIR.mkdir(parents=True, exist_ok=True)
-    joblib.dump(rf, MODELS_DIR / PROMOTED_MODEL, compress=3)
-    joblib.dump(rf, MODELS_DIR / RF_ARTIFACT, compress=3)
-    joblib.dump(lr, MODELS_DIR / LR_ARTIFACT, compress=3)
+    CANDIDATES_DIR.mkdir(parents=True, exist_ok=True)
+    joblib.dump(rf, CANDIDATES_DIR / PROMOTED_MODEL, compress=3)
+    joblib.dump(rf, CANDIDATES_DIR / RF_ARTIFACT, compress=3)
+    joblib.dump(lr, CANDIDATES_DIR / LR_ARTIFACT, compress=3)
 
     feature_meta = {
-        "version": 1,
+        "version": 2,
+        "deployment": "shadow_only",
         "target": TARGET,
         "features": features,
         "numeric_features": NUMERIC_FEATURES,
@@ -136,15 +128,16 @@ def main() -> None:
         "min_wait": MIN_WAIT,
         "max_wait": MAX_WAIT,
     }
-    with (MODELS_DIR / "feature_meta.json").open("w") as fh:
+    with (CANDIDATES_DIR / "feature_meta.json").open("w") as fh:
         json.dump(feature_meta, fh, indent=2)
 
     metrics = {
         "winner": winner,
-        "decision": "Random Forest promoted as primary per architecture.md §2: models are "
-        "statistically indistinguishable on this noisy dataset (test RMSE 43.20 vs 43.30 min, "
-        "r2 0.13 vs 0.12; 5-fold CV RMSE 41.90 vs 41.71). Linear baseline artifact kept for the "
-        "Phase 9 improved-vs-traditional comparison. Revisit XGBoost/LightGBM when data grows.",
+        "decision": "RF candidate and LR baseline saved for review, not promoted. "
+        "No statistical significance or live-estimator superiority is claimed.",
+        "validation": "Chronological 80/20 holdout; five temporal CV folds on training rows only. "
+        "CV RMSE is unclipped; holdout predictions are clipped to target bounds. "
+        "Numeric identities and zero-imputed missing queues still limit live applicability.",
         "test": {
             "random_forest_tuned": rf_test,
             "linear_baseline": lr_test,
@@ -154,12 +147,12 @@ def main() -> None:
             "linear_baseline": round(lr_cv_rmse, 2),
         },
         "rf_config": RF_CONFIG,
-        "xgboost_lightgbm": "skipped: 5.8k rows too small to justify (architecture.md §2)",
+        "xgboost_lightgbm": "not evaluated by this training script",
     }
-    with (MODELS_DIR / "metrics.json").open("w") as fh:
+    with (CANDIDATES_DIR / "metrics.json").open("w") as fh:
         json.dump(metrics, fh, indent=2)
 
-    print(f"artifacts written to {MODELS_DIR}")
+    print(f"candidates written to {CANDIDATES_DIR}; deployed artifacts unchanged")
 
 
 if __name__ == "__main__":

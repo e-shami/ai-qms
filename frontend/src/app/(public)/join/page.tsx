@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import { ArrowLeft, ArrowRight, MessageCircle, Printer, Search, Ticket } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -17,6 +18,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { IntakeFields, emptyIntake, intakePayload } from "@/components/tokens/intake-fields";
+import { PublicPriority } from "@/components/tokens/public-priority";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Panel } from "@/components/ui/status";
@@ -25,11 +28,20 @@ import {
   usePublicCounters,
   usePublicInstitutions,
 } from "@/hooks/use-public";
-import {
-  joinDetailsSchema,
-  type JoinDetailsFormValues,
-} from "@/lib/validators";
+import { joinDetailsSchema } from "@/lib/validators";
 import type { PublicInstitution, PublicTicket } from "@/types";
+
+const copySchema = joinDetailsSchema.extend({
+  customerPhone: z.string().trim().max(32).refine(
+    (value) => !value || /^\+[1-9][0-9]{6,14}$/.test(value.replace(/[\s().-]/g, "")),
+    "Use full international format, e.g. +923111234567"
+  ),
+  whatsappCopy: z.boolean(),
+}).refine((value) => !value.whatsappCopy || !!value.customerPhone, {
+  path: ["customerPhone"], message: "Phone is required for a WhatsApp copy",
+});
+type JoinDetailsFormValues = z.infer<typeof copySchema>;
+type CopyTicket = PublicTicket & { notification?: { status: string; action_url?: string | null } };
 
 function formatWait(minutes: number | null): string {
   if (minutes === null) return "—";
@@ -39,12 +51,9 @@ function formatWait(minutes: number | null): string {
 
 function whatsappLink(number: string | null, institution: string, counter: string): string | null {
   if (!number) return null;
-  // wa.me needs full international digits; convert local 03xx form to +92xx.
-  const digits = number.replace(/\D/g, "");
-  let intl: string | null = null;
-  if (/^92\d{10}$/.test(digits)) intl = digits;
-  else if (/^0\d{10}$/.test(digits)) intl = `92${digits.slice(1)}`;
-  if (!intl) return null;
+  const normalized = number.replace(/[\s().-]/g, "");
+  if (!/^\+[1-9][0-9]{6,14}$/.test(normalized)) return null;
+  const intl = normalized.slice(1);
   const text = encodeURIComponent(
     `Hello ${institution}! I would like a token for ${counter}.`
   );
@@ -60,7 +69,9 @@ export default function JoinPage() {
     selectedInstitution?.id ?? null
   );
   const [counterId, setCounterId] = useState<number | null>(null);
-  const [issued, setIssued] = useState<PublicTicket | null>(null);
+  const [issued, setIssued] = useState<CopyTicket | null>(null);
+  const [intake, setIntake] = useState(emptyIntake);
+  const issuing = useRef(false);
 
   const {
     register,
@@ -68,8 +79,8 @@ export default function JoinPage() {
     reset,
     formState: { errors, isSubmitting },
   } = useForm<JoinDetailsFormValues>({
-    resolver: zodResolver(joinDetailsSchema),
-    defaultValues: { customerName: "", customerPhone: "" },
+    resolver: zodResolver(copySchema),
+    defaultValues: { customerName: "", customerPhone: "", whatsappCopy: false },
   });
 
   const filtered = (institutions ?? []).filter((institution) =>
@@ -78,38 +89,45 @@ export default function JoinPage() {
   const selectedCounter = counters?.find((counter) => counter.id === counterId) ?? null;
 
   async function onSubmit(values: JoinDetailsFormValues) {
-    if (!selectedInstitution || !counterId) {
+    if (issuing.current) return;
+    if (!selectedInstitution || !selectedCounter) {
       toast.error("Select a service first");
       return;
     }
+    issuing.current = true;
     try {
-      const ticket = await issuePublicToken({
+      const payload = {
+        ...intakePayload(intake, true, selectedInstitution.type?.trim().toLowerCase() === "hospital"),
         institution_id: selectedInstitution.id,
-        counter_id: counterId,
+        counter_id: selectedCounter.id,
         customer_name: values.customerName || null,
         customer_phone: values.customerPhone || null,
-      });
+        whatsapp_copy: values.whatsappCopy,
+      };
+      const ticket = await issuePublicToken(payload);
       toast.success(`Token ${ticket.token_number} issued`);
       setIssued(ticket);
+      setIntake(emptyIntake);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Could not issue a token";
       toast.error(message);
+    } finally {
+      issuing.current = false;
     }
   }
 
   function startOver() {
     setIssued(null);
+    setIntake(emptyIntake);
     setCounterId(null);
     setSelectedInstitution(null);
-    reset({ customerName: "", customerPhone: "" });
+    reset({ customerName: "", customerPhone: "", whatsappCopy: false });
   }
 
   if (issued && selectedInstitution) {
-    const waLink = whatsappLink(
-      selectedInstitution.whatsapp_number ?? null,
-      selectedInstitution.name,
-      issued.counter_name
-    );
+    const actionUrl = issued.notification?.action_url;
+    const waLink = issued.notification?.status === "action_required" && actionUrl &&
+      /^https:\/\/wa\.me\/[1-9][0-9]{6,14}\?text=status$/.test(actionUrl) ? actionUrl : null;
     const ticketUrl = `/token/${encodeURIComponent(issued.token_number)}?institution=${selectedInstitution.id}`;
     return (
       <>
@@ -140,11 +158,18 @@ export default function JoinPage() {
             <p className="text-xs text-muted-foreground">
               Counter: {issued.counter_name} · keep this page link or take a screenshot.
             </p>
+            <PublicPriority ticket={issued} />
             {waLink && (
-              <Button className="w-full" render={<a href={waLink} target="_blank" rel="noopener noreferrer" />}>
-                <MessageCircle />
-                Get updates on WhatsApp
-              </Button>
+              <div className="space-y-2">
+                <p role="status" className="text-sm">No copy has been sent. Open WhatsApp and send status from the number you entered to retrieve your active ticket. If several tickets appear, select this one.</p>
+                <Button className="w-full" render={<a href={waLink} target="_blank" rel="noopener noreferrer" />}>
+                  <MessageCircle />
+                  Request my WhatsApp copy
+                </Button>
+              </div>
+            )}
+            {issued.notification?.status === "unavailable" && (
+              <p role="status" className="text-sm">Your token is issued, but WhatsApp copies are unavailable. Keep this ticket; do not create another token for delivery.</p>
             )}
             <div className="flex gap-2">
               <Button variant="outline" className="flex-1" render={<Link href={ticketUrl} />}>
@@ -226,7 +251,7 @@ export default function JoinPage() {
   return (
     <>
       <div className="flex items-center gap-3">
-        <Button size="icon-sm" variant="outline" onClick={() => setSelectedInstitution(null)} aria-label="Back to institutions">
+        <Button size="icon-sm" variant="outline" disabled={isSubmitting} onClick={startOver} aria-label="Back to institutions">
           <ArrowLeft />
         </Button>
         <div>
@@ -255,6 +280,7 @@ export default function JoinPage() {
               <li key={counter.id}>
                 <button
                   type="button"
+                  disabled={isSubmitting}
                   onClick={() => setCounterId(counter.id)}
                   aria-pressed={counterId === counter.id}
                   className={`flex w-full items-center justify-between rounded-lg border px-3 py-2.5 text-left transition-colors hover:bg-muted ${
@@ -279,16 +305,19 @@ export default function JoinPage() {
         )}
       </Panel>
 
-      {counterId !== null && (
+      {selectedCounter !== null && (
         <Card>
           <CardHeader>
-            <CardTitle>Your details (optional)</CardTitle>
+            <CardTitle>Your details</CardTitle>
             <CardDescription>
-              A name helps staff address you; a phone enables WhatsApp updates where supported.
+              A name helps staff address you. Providing a phone alone does not request messaging.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-4">
+            <form onSubmit={(event) => void handleSubmit(onSubmit)(event)} noValidate className="space-y-4">
+              <fieldset disabled={isSubmitting}>
+                <IntakeFields value={intake} onChange={setIntake} required hospital={selectedInstitution.type?.trim().toLowerCase() === "hospital"} institutionName={selectedInstitution.name} />
+              </fieldset>
               <div className="space-y-2">
                 <Label htmlFor="join-name">Name</Label>
                 <Input
@@ -306,14 +335,20 @@ export default function JoinPage() {
                 <Input
                   id="join-phone"
                   type="tel"
-                  placeholder="0311 1234567"
+                  placeholder="+923111234567"
                   aria-invalid={!!errors.customerPhone}
+                  aria-describedby={errors.customerPhone ? "join-phone-error" : undefined}
                   {...register("customerPhone")}
                 />
                 {errors.customerPhone && (
-                  <p className="text-xs text-destructive">{errors.customerPhone.message}</p>
+                  <p id="join-phone-error" className="text-xs text-destructive">{errors.customerPhone.message}</p>
                 )}
               </div>
+              <div className="flex items-start gap-2">
+                <input id="join-whatsapp-copy" type="checkbox" aria-describedby="join-copy-hint" className="mt-1" {...register("whatsappCopy")} />
+                <Label htmlFor="join-whatsapp-copy">I want a WhatsApp copy of my token at this number.</Label>
+              </div>
+              <p id="join-copy-hint" className="text-xs text-muted-foreground">Optional. After issuance, open WhatsApp and send the prefilled status message from this number. This does not issue a second token or subscribe you to updates.</p>
               {waEarlyLink && (
                 <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                   <MessageCircle className="size-3.5" />

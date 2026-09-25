@@ -41,7 +41,7 @@ export async function sendNotification(payload: NotificationPayload): Promise<bo
         return false;
     }
   } catch (error) {
-    console.error('Failed to send notification:', error);
+    console.error('Failed to send notification');
     return false;
   }
 }
@@ -137,7 +137,7 @@ export async function sendSessionMessage(
     await waClient.sendText(to, text);
     return true;
   } catch (error) {
-    console.error('Failed to send session message:', error);
+    console.error('Failed to send session message');
     return false;
   }
 }

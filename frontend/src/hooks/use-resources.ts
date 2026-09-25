@@ -3,106 +3,47 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { api } from "@/lib/api-client";
+import { queueSocket } from "@/lib/socket";
 import { useAuthStore } from "@/store/auth";
 import type { Counter, Institution, Personnel, TokenPage } from "@/types";
 
-// --- tiny shared cache -------------------------------------------------------
-// Purpose: dedupe identical concurrent GETs (several components ask for the
-// same resource on one screen) and enable instant paint on quick remounts.
-// Short TTL keeps it a performance aid, never a staleness hazard — mutations
-// always call reload(), which bypasses the cache entirely.
-const CACHE_TTL_MS = 5000;
-const CACHE_MAX_ENTRIES = 50;
-
-type CacheEntry = { data: unknown; at: number };
-
-const responseCache = new Map<string, CacheEntry>();
-const inflight = new Map<string, Promise<unknown>>();
-
-function cacheGet(path: string): CacheEntry | undefined {
-  const hit = responseCache.get(path);
-  if (!hit) return undefined;
-  if (Date.now() - hit.at > CACHE_TTL_MS) {
-    responseCache.delete(path);
-    return undefined;
-  }
-  return hit;
-}
-
-function cacheSet(path: string, data: unknown): void {
-  if (!responseCache.has(path) && responseCache.size >= CACHE_MAX_ENTRIES) {
-    const oldest = responseCache.keys().next().value;
-    if (oldest !== undefined) responseCache.delete(oldest);
-  }
-  responseCache.set(path, { data, at: Date.now() });
-}
-
-function fetchShared<T>(path: string): Promise<T> {
-  const existing = inflight.get(path);
-  if (existing) return existing as Promise<T>;
-  const promise = api.get<T>(path).finally(() => inflight.delete(path));
-  inflight.set(path, promise);
-  return promise;
-}
-
-function fetchFresh<T>(path: string): Promise<T> {
-  // Bypass inflight cache for forced reloads
-  const promise = api.get<T>(path).finally(() => {
-    // Also clear any stale inflight entry for this path
-    inflight.delete(path);
-  });
-  return promise;
-}
-
 function useResource<T>(path: string, enabled: boolean) {
-  // Instant paint: seed from cache synchronously so remounts don't flash skeletons.
-  const [entry, setEntry] = useState<{ path: string; data: T } | null>(() => {
-    if (!enabled) return null;
-    const hit = cacheGet(path);
-    return hit ? { path, data: hit.data as T } : null;
-  });
-  const [error, setError] = useState<string | null>(null);
+  const session = useAuthStore((state) => state.accessToken);
+  const [entry, setEntry] = useState<{ path: string; session: string | null; data: T } | null>(null);
+  const [failure, setFailure] = useState<{ path: string; session: string | null; message: string } | null>(null);
   const mountedRef = useRef(true);
   const requestIdRef = useRef(0);
 
   const load = useCallback(
-    (force: boolean) => {
-      if (!enabled) return;
-      if (!force) {
-        const hit = cacheGet(path);
-        if (hit) {
-          setEntry({ path, data: hit.data as T });
-          setError(null);
-          return;
-        }
-      }
+    () => {
+      if (!enabled || !session || useAuthStore.getState().accessToken !== session) return;
       const requestId = ++requestIdRef.current;
-      const pending = force ? fetchFresh<T>(path) : fetchShared<T>(path);
-      void pending
+      const pending = api.get<T>(path);
+      return pending
         .then((data) => {
-          if (mountedRef.current && requestId === requestIdRef.current) {
-            cacheSet(path, data);
-            setEntry({ path, data });
-            setError(null);
+          if (mountedRef.current && requestId === requestIdRef.current && useAuthStore.getState().accessToken === session) {
+            setEntry({ path, session, data });
+            setFailure(null);
           }
         })
         .catch((err) => {
           if (
             mountedRef.current &&
             requestId === requestIdRef.current &&
+            useAuthStore.getState().accessToken === session &&
             err instanceof Error
           ) {
-            setError(err.message);
+            setFailure({ path, session, message: err.message });
           }
         });
     },
-    [enabled, path],
+    [enabled, path, session],
   );
 
   useEffect(() => {
     mountedRef.current = true;
-    if (!enabled) return;
-    const kickoff = setTimeout(() => load(false), 0);
+    requestIdRef.current += 1;
+    const kickoff = setTimeout(load, 0);
     return () => {
       mountedRef.current = false;
       clearTimeout(kickoff);
@@ -110,15 +51,16 @@ function useResource<T>(path: string, enabled: boolean) {
   }, [enabled, load]);
 
   const reload = useCallback(() => {
-    setError(null);
-    load(true);
+    setFailure(null);
+    return load();
   }, [load]);
 
   // Data shown must belong to the current path (filters change paths).
   const data =
-    entry?.path === path
+    enabled && entry?.path === path && entry.session === session
       ? entry.data
-      : ((cacheGet(path)?.data as T | undefined) ?? null);
+      : null;
+  const error = enabled && failure?.path === path && failure.session === session ? failure.message : null;
   const loading = enabled && data === null && error === null;
 
   return { data, loading, error, reload };
@@ -168,5 +110,14 @@ export function useTokens(options?: {
   const qs = params.toString();
   const key = `/tokens${qs ? `?${qs}` : ""}`;
   const { data, ...rest } = useResource<TokenPage>(key, authed);
+  const reload = rest.reload;
+  useEffect(() => {
+    if (!authed) return;
+    queueSocket.connect();
+    const unsubscribe = queueSocket.subscribe(() => reload());
+    const unsubscribeState = queueSocket.subscribeState((connected) => { if (connected) reload(); });
+    const poll = setInterval(reload, 15000);
+    return () => { unsubscribe(); unsubscribeState(); clearInterval(poll); };
+  }, [authed, reload]);
   return { tokens: data?.items ?? null, total: data?.total ?? 0, ...rest };
 }

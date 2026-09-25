@@ -14,7 +14,7 @@ const POLL_MS = 15000;
  * today stats, presence) refreshed by WebSocket activity and a slow poll.
  */
 export function useWorkspace() {
-  const [workspace, setWorkspace] = useState<StaffWorkspace | null>(null);
+  const [entry, setEntry] = useState<{ session: string; workspace: StaffWorkspace } | null>(null);
   const [presence, setPresence] = useState<PresenceEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -25,7 +25,8 @@ export function useWorkspace() {
   const prevTokenRef = useRef<string | null>(accessToken);
 
   const fetchWorkspace = useCallback(async () => {
-    if (!useAuthStore.getState().accessToken) return;
+    const session = useAuthStore.getState().accessToken;
+    if (!session) return;
     const tzOffsetMinutes = -new Date().getTimezoneOffset();
     const requestId = ++requestIdRef.current;
     try {
@@ -33,14 +34,15 @@ export function useWorkspace() {
         `/staff/workspace?tz_offset_minutes=${tzOffsetMinutes}`,
       );
       // Ignore stale responses: only update state if this is still the latest request
-      if (mountedRef.current && requestId === requestIdRef.current) {
-        setWorkspace(data);
+      if (mountedRef.current && requestId === requestIdRef.current && useAuthStore.getState().accessToken === session) {
+        setEntry({ session, workspace: data });
         setError(null);
       }
     } catch (err) {
       if (
         mountedRef.current &&
         requestId === requestIdRef.current &&
+        useAuthStore.getState().accessToken === session &&
         err instanceof Error
       ) {
         setError(err.message);
@@ -66,11 +68,13 @@ export function useWorkspace() {
 
   useEffect(() => {
     mountedRef.current = true;
+    requestIdRef.current += 1;
     if (!authed) return;
 
     const kickoff = setTimeout(() => void fetchWorkspace(), 0);
     queueSocket.connect();
     const unsubscribeQueue = queueSocket.subscribe(() => void fetchWorkspace());
+    const unsubscribeState = queueSocket.subscribeState((connected) => { if (connected) void fetchWorkspace(); });
     const unsubscribePresence = queueSocket.subscribePresence((entries) =>
       setPresence(entries),
     );
@@ -80,21 +84,17 @@ export function useWorkspace() {
       mountedRef.current = false;
       clearTimeout(kickoff);
       unsubscribeQueue();
+      unsubscribeState();
       unsubscribePresence();
       clearInterval(poll);
     };
-  }, [authed, fetchWorkspace]);
+  }, [authed, accessToken, fetchWorkspace]);
 
   const reload = useCallback(() => {
     setLoading(true);
-    const requestId = ++requestIdRef.current;
-    return fetchWorkspace().finally(() => {
-      // Only clear loading if this is still the latest request
-      if (requestId === requestIdRef.current) {
-        setLoading(false);
-      }
-    });
+    return fetchWorkspace();
   }, [fetchWorkspace]);
 
+  const workspace = accessToken && entry?.session === accessToken ? entry.workspace : null;
   return { workspace, presence, loading, error, reload };
 }
