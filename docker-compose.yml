@@ -17,7 +17,8 @@ services:
       retries: 5
 
   backend:
-    build: ./backend
+    build:
+      context: ./backend
     restart: unless-stopped
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://aiqms:aiqms@db:5432/aiqms}
@@ -61,7 +62,8 @@ services:
       - db
 
   whatsapp-bot:
-    build: ./whatsapp-bot
+    build:
+      context: ./whatsapp-bot
     restart: unless-stopped
     environment:
       NODE_ENV: production
@@ -85,7 +87,8 @@ services:
 
   cv-service:
     profiles: [cv]
-    build: ./cv-service
+    build:
+      context: ./cv-service
     restart: unless-stopped
     environment:
       CAMERA_SOURCE: ${CAMERA_SOURCE:-0}
